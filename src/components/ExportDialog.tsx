@@ -11,6 +11,7 @@ import {
   type BuiltMesh, type MeshFormat, type MeshPreview,
 } from '../export/mesh';
 import { savePslop, promptOpenPslop } from '../export/pslop';
+import { savePsd, promptOpenPsd } from '../export/psd';
 import { Modal } from './Dialogs';
 
 type Tab = 'raster' | 'mesh' | 'shader' | 'project';
@@ -325,6 +326,17 @@ function ProjectTab() {
       <div className="footer" style={{ justifyContent: 'flex-start' }}>
         <button className="btn primary" onClick={() => void savePslop()}>Save .pslop</button>
         <button className="btn" onClick={() => { promptOpenPslop(setStatus); setModal(null); }}>Open .pslop…</button>
+      </div>
+      <p style={{ color: 'var(--text-1)', lineHeight: 1.6, maxWidth: 560, borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 18 }}>
+        <b>.psd</b> interop for Photoshop, GIMP, Krita, Affinity &amp; co. Export
+        writes a layered 8-bit RGB PSD — every layer baked to pixels with its
+        blend mode, opacity and visibility preserved, plus a flattened
+        composite (procedural effect layers only appear in the composite).
+        Import reads 8-bit RGB/grayscale PSDs as raster layers.
+      </p>
+      <div className="footer" style={{ justifyContent: 'flex-start' }}>
+        <button className="btn primary" onClick={() => void savePsd()}>Export .psd</button>
+        <button className="btn" onClick={() => { promptOpenPsd(setStatus); setModal(null); }}>Import .psd…</button>
       </div>
     </div>
   );

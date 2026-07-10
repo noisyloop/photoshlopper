@@ -53,6 +53,8 @@ interface EditorState {
   fg: string;
   bg: string;
   brush: BrushSettings;
+  /** id of the brush preset the current settings came from; null = custom */
+  brushPresetId: string | null;
   tolerance: number;
   gradientKind: 'linear' | 'radial';
   marqueeKind: 'rect' | 'ellipse';
@@ -85,6 +87,7 @@ export const useStore = create<EditorState>(() => ({
   fg: '#000000',
   bg: '#ffffff',
   brush: { size: 24, hardness: 0.8, opacity: 1, flow: 0.85, spacing: 0.15 },
+  brushPresetId: 'round',
   tolerance: 32,
   gradientKind: 'linear',
   marqueeKind: 'rect',
@@ -720,6 +723,23 @@ export function zoom100(): void {
 
 export function setTool(tool: ToolId): void {
   set({ tool, status: `Tool: ${tool}` });
+}
+
+/** Tweak brush settings by hand — marks the brush as "custom" (no preset). */
+export function setBrushSettings(patch: Partial<BrushSettings>): void {
+  set((s) => ({ brush: { ...s.brush, ...patch }, brushPresetId: null }));
+}
+
+/** Apply a named preset; switches to the Brush tool if no paint tool is active. */
+export function applyBrushPreset(preset: { id: string; name: string; settings: BrushSettings }): void {
+  const patch: Partial<EditorState> = {
+    brush: { ...preset.settings },
+    brushPresetId: preset.id,
+    status: `Brush: ${preset.name}`,
+  };
+  const tool = get().tool;
+  if (tool !== 'brush' && tool !== 'eraser' && tool !== 'clone') patch.tool = 'brush';
+  set(patch);
 }
 
 export function setModal(modal: EditorState['modal']): void {

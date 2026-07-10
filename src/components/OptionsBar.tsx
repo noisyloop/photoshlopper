@@ -1,4 +1,5 @@
-import { useStore } from '../store';
+import { useStore, setBrushSettings, applyBrushPreset } from '../store';
+import { BRUSH_PRESETS } from '../core/brushPresets';
 import { applyCrop, cancelCrop } from '../tools/nav';
 
 function Slider({ label, value, min, max, step = 1, onChange, format }: {
@@ -16,8 +17,6 @@ function Slider({ label, value, min, max, step = 1, onChange, format }: {
 
 export function OptionsBar() {
   const s = useStore();
-  const setBrush = (patch: Partial<typeof s.brush>) =>
-    useStore.setState((st) => ({ brush: { ...st.brush, ...patch } }));
 
   const pct = (v: number) => `${Math.round(v * 100)}%`;
 
@@ -28,10 +27,23 @@ export function OptionsBar() {
     case 'clone':
       controls = (
         <>
-          <Slider label="Size" value={s.brush.size} min={1} max={300} onChange={(v) => setBrush({ size: v })} />
-          <Slider label="Hardness" value={s.brush.hardness} min={0} max={1} step={0.01} onChange={(v) => setBrush({ hardness: v })} format={pct} />
-          <Slider label="Opacity" value={s.brush.opacity} min={0.01} max={1} step={0.01} onChange={(v) => setBrush({ opacity: v })} format={pct} />
-          <Slider label="Flow" value={s.brush.flow} min={0.01} max={1} step={0.01} onChange={(v) => setBrush({ flow: v })} format={pct} />
+          <span className="opt">
+            <span>Brush</span>
+            <select
+              value={s.brushPresetId ?? '__custom'}
+              onChange={(e) => {
+                const p = BRUSH_PRESETS.find((bp) => bp.id === e.target.value);
+                if (p) applyBrushPreset(p);
+              }}
+            >
+              {s.brushPresetId === null && <option value="__custom">Custom</option>}
+              {BRUSH_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </span>
+          <Slider label="Size" value={s.brush.size} min={1} max={300} onChange={(v) => setBrushSettings({ size: v })} />
+          <Slider label="Hardness" value={s.brush.hardness} min={0} max={1} step={0.01} onChange={(v) => setBrushSettings({ hardness: v })} format={pct} />
+          <Slider label="Opacity" value={s.brush.opacity} min={0.01} max={1} step={0.01} onChange={(v) => setBrushSettings({ opacity: v })} format={pct} />
+          <Slider label="Flow" value={s.brush.flow} min={0.01} max={1} step={0.01} onChange={(v) => setBrushSettings({ flow: v })} format={pct} />
           {s.tool === 'clone' && <span className="hint">Alt+click sets the clone source</span>}
         </>
       );

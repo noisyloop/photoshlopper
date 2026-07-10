@@ -7,6 +7,7 @@ import {
   cropDoc, setStatus, beginTransform,
 } from '../store';
 import { savePslop, promptOpenPslop } from '../export/pslop';
+import { savePsd, promptOpenPsd } from '../export/psd';
 import { applyFloydSteinberg } from '../core/filters';
 import { PROC_DEFS } from '../core/procedural';
 import { maskBounds } from '../core/selection';
@@ -56,7 +57,10 @@ export function MenuBar() {
       items: [
         { label: 'New…', combo: 'mod+n', action: () => setModal('newdoc') },
         { label: 'Open .pslop…', combo: 'mod+o', action: () => promptOpenPslop(setStatus) },
+        { label: 'Import .psd…', action: () => promptOpenPsd(setStatus) },
+        { label: '', separator: true },
         { label: 'Save .pslop', combo: 'mod+s', action: () => void savePslop(), disabled: !doc },
+        { label: 'Export .psd (layered)', action: () => void savePsd(), disabled: !doc },
         { label: 'Export…', combo: 'mod+shift+s', action: () => setModal('export'), disabled: !doc },
       ],
     },

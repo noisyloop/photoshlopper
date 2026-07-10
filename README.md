@@ -42,7 +42,11 @@ searchable shortcut cheatsheet.
   re-click a text layer to re-edit), Shape (rect/ellipse/line), Hand, Zoom.
 - **Brush engine** — stamp-based with size/hardness/opacity/flow + spacing,
   pointer-pressure size, strokes buffered offscreen and committed as **one
-  undo entry per stroke**, respects selections and layer locks.
+  undo entry per stroke**, respects selections and layer locks. A **Brushes
+  panel** in the dock shows named presets (Round, Soft/Hard Round, Pencil,
+  Inker, Marker, Airbrush, Stipple) as live stroke previews rendered through
+  the actual engine — click to apply; hand-tweaking any slider flips the
+  options-bar picker to "Custom".
 - **Layers** — thumbnails, rename (double-click), visibility, opacity, blend
   mode, lock, drag-reorder, duplicate, delete, merge down / merge visible /
   flatten, layer masks (from selection). Selections and masks are the same
@@ -106,6 +110,15 @@ searchable shortcut cheatsheet.
   transforms, procedural graphs, seed, format version) + one PNG per pixel
   layer + raw mask/selection bytes. Round-trips losslessly; undo history is
   not persisted. The zip reader only supports archives Photoshlopper wrote.
+- **`.psd` import/export** — a dependency-free 8-bit RGB PSD codec
+  (`src/export/psd.ts`, PackBits RLE). Export bakes every layer (transform,
+  mask, procedural render) to doc-sized pixels and writes a layered PSD with
+  blend mode / opacity / visibility mapped to the PSD equivalents, plus the
+  flattened composite; adjustment layers only appear in the composite.
+  Import reads 8-bit RGB/grayscale PSDs (raw or RLE) as raster layers,
+  skipping group dividers, and falls back to the flattened composite for
+  files without layer data. 16/32-bit, PSB and ZIP-compressed channels are
+  rejected with a clear error.
 
 ## What's stubbed / not implemented (honestly)
 
