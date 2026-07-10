@@ -1,18 +1,19 @@
-// Right dock: Ransomiser card, Color/Swatches, Layers, Properties (procedural
-// params of the active layer), History, and the Export button.
+// Right dock: Ransomiser card, Brushes, Color/Swatches, Layers, Properties
+// (procedural params of the active layer), History, and the Export button.
 
 import { useEffect, useRef, useState } from 'react';
 import {
   useStore, setModal, setActiveLayer, setLayerProps, setLayerPropsLive,
   addLayer, duplicateLayer, deleteLayer, mergeDown, addLayerMask, reorderLayer,
   activeLayer, jumpToHistory, updateProceduralParamLive, commitProceduralParam,
-  swapColors, resetColors,
+  swapColors, resetColors, applyBrushPreset, type BrushSettings,
 } from '../store';
 import { getPixels } from '../core/pixels';
 import { BLEND_MODES } from '../core/blend';
 import { getProcDef } from '../core/procedural';
 import { ransomise } from '../core/randomiser';
 import { randomSeed, rgbToHex, hexToRgb01 } from '../core/rng';
+import { BRUSH_PRESETS, renderBrushPreview } from '../core/brushPresets';
 import type { Layer, BlendMode, ParamValue } from '../types';
 
 export function RightDock() {
@@ -24,10 +25,56 @@ export function RightDock() {
           ⬇ Export…
         </button>
       </div>
+      <BrushesPanel />
       <ColorPanel />
       <LayersPanel />
       <PropertiesPanel />
       <HistoryPanel />
+    </div>
+  );
+}
+
+// ---------- Brushes ----------
+
+const PREVIEW_INK = '#dfe3ec';
+
+function BrushStrokePreview({ settings, w, h }: { settings: BrushSettings; w: number; h: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext('2d')!;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(renderBrushPreview(settings, w, h, PREVIEW_INK), 0, 0);
+  }, [settings, w, h]);
+  return <canvas ref={ref} width={w} height={h} />;
+}
+
+function BrushesPanel() {
+  const brush = useStore((s) => s.brush);
+  const presetId = useStore((s) => s.brushPresetId);
+  return (
+    <div className="panel">
+      <h3>
+        Brushes
+        <span className="brush-readout">{Math.round(brush.size)}px · {Math.round(brush.hardness * 100)}% hard</span>
+      </h3>
+      <div className="brush-current" title="Your current brush — tweak size/hardness/opacity/flow in the bar above the canvas">
+        <BrushStrokePreview settings={brush} w={496} h={76} />
+      </div>
+      <div className="brush-grid">
+        {BRUSH_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            className={`brush-tile ${presetId === p.id ? 'active' : ''}`}
+            title={`${p.name} — ${p.hint}`}
+            onClick={() => applyBrushPreset(p)}
+          >
+            <BrushStrokePreview settings={p.settings} w={240} h={56} />
+            <span>{p.name}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
