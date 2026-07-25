@@ -4,7 +4,7 @@ A browser-based raster image editor — a small, honest Photoshop clone aimed at
 stickers, generative art and shareable graphics. Everything runs client-side;
 there is no backend. Its two party tricks:
 
-- **The Ransomiser** — one click seeds the canvas with reproducible generative
+- **The Randomiser** — one click seeds the canvas with reproducible generative
   art (visible seed, mulberry32) plus a couple of random effects.
 - **An export system that goes past pixels** — die-cut 3D sticker meshes and
   heightfields (GLB/GLTF/OBJ), and real fragment shaders (raw WebGL2,
