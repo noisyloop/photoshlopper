@@ -80,7 +80,7 @@ interface EditorState {
   viewportH: number;
   screenMode: number; // 0 normal, 1 no menu, 2 canvas only
   panelsHidden: boolean;
-  modal: null | 'export' | 'newdoc' | 'shortcuts' | 'fill' | 'imagesize' | 'canvassize';
+  modal: null | 'export' | 'newdoc' | 'shortcuts' | 'fill' | 'imagesize' | 'canvassize' | 'removebg';
   status: string;
   past: HistoryEntry[];
   future: HistoryEntry[];

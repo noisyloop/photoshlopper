@@ -1,17 +1,21 @@
-// New Document, Image Size, Canvas Size and Fill dialogs, and the searchable
+// New Document, Image Size, Canvas Size, Remove Background and Fill dialogs,
+// and the searchable
 // shortcut cheatsheet.
 
-import { useState } from 'react';
-import { useStore, newDoc, setModal, fillWith, resizeImage, resizeCanvas } from '../store';
+import { useEffect, useRef, useState } from 'react';
+import { useStore, newDoc, setModal, fillWith, resizeImage, resizeCanvas, setStatus } from '../store';
+import { openRemoveBg, computeMask, previewRemoveBg, applyRemoveBg, cancelRemoveBg, keptFraction, type BgMode } from '../core/removeBg';
 import { randomize } from '../core/randomizer';
 import { randomSeed } from '../core/rng';
 import { SHORTCUTS, formatCombo } from '../keymap';
 
-export function Modal({ title, onClose, children, wide }: {
+export function Modal({ title, onClose, children, wide, side }: {
   title: string; onClose?: () => void; children: React.ReactNode; wide?: boolean;
+  /** float at the side over an undimmed canvas (for live previews) */
+  side?: boolean;
 }) {
   return (
-    <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
+    <div className={`modal-backdrop ${side ? 'side' : ''}`} onPointerDown={(e) => { if (!side && e.target === e.currentTarget) onClose?.(); }}>
       <div className="modal" style={wide ? { width: 'min(860px, 92vw)' } : undefined}>
         <h2>
           {title}
@@ -142,6 +146,107 @@ export function CanvasSizeDialog() {
       <div className="footer">
         <button className="btn" onClick={() => setModal(null)}>Cancel</button>
         <button className="btn primary" onClick={() => { resizeCanvas(clampSize(w), clampSize(h), ax, ay); setModal(null); }}>Apply</button>
+      </div>
+    </Modal>
+  );
+}
+
+export function RemoveBgDialog() {
+  const [mode, setMode] = useState<BgMode>('subject');
+  const [tolerance, setTolerance] = useState(40);
+  const [cutoff, setCutoff] = useState(0.5);
+  const [softness, setSoftness] = useState(0.3);
+  const [state, setState] = useState<'working' | 'ready' | 'error'>('working');
+  const [message, setMessage] = useState('');
+  // bumps per computed mask: a fast recompute can collapse working→ready into
+  // "no state change", and the readout below reads the mask outside React
+  const [, setMaskRev] = useState(0);
+  const opened = useRef(false);
+
+  // open once per dialog; cancel (restore the layer) when it goes away unapplied
+  useEffect(() => {
+    const err = openRemoveBg();
+    if (err) {
+      setStatus(err);
+      setModal(null);
+      return;
+    }
+    opened.current = true;
+    return () => cancelRemoveBg();
+  }, []);
+
+  useEffect(() => {
+    if (!opened.current) return;
+    let live = true;
+    setState('working');
+    setMessage(mode === 'subject' ? 'Finding the subject… (first run loads a 4.5 MB model)' : 'Finding the backdrop…');
+    computeMask(mode, tolerance).then(
+      (ok) => {
+        if (!live || !ok) return;
+        setState('ready');
+        setMessage('');
+        setMaskRev((r) => r + 1);
+        previewRemoveBg(cutoff, softness);
+      },
+      (e) => {
+        if (!live) return;
+        setState('error');
+        setMessage(`Couldn't run background removal: ${e instanceof Error ? e.message : String(e)}`);
+      },
+    );
+    return () => { live = false; };
+    // cutoff/softness only re-preview (below); they don't need a new mask
+  }, [mode, tolerance]);
+
+  useEffect(() => {
+    if (state === 'ready') previewRemoveBg(cutoff, softness);
+  }, [cutoff, softness, state]);
+
+  const close = () => setModal(null); // unmount cleanup cancels
+  const kept = state === 'ready' ? keptFraction(cutoff) : null;
+  return (
+    <Modal title="Remove Background" onClose={close} side>
+      <div className="form-row">
+        <label>Find</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value as BgMode)}>
+          <option value="subject">Main subject (AI)</option>
+          <option value="backdrop">Plain backdrop color</option>
+        </select>
+      </div>
+      <p className="hint-text">
+        {mode === 'subject'
+          ? 'Keeps the main object (a car, a person, a pet) and removes everything behind it — runs on your device.'
+          : 'Removes the solid/plain color touching the image edges. Best for product shots on white.'}
+      </p>
+      {mode === 'backdrop' && (
+        <div className="prop-row">
+          <label>Tolerance</label>
+          <input type="range" min={2} max={160} value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} />
+          <span className="val">{tolerance}</span>
+        </div>
+      )}
+      <div className="prop-row">
+        <label title="Higher removes more">Edge cutoff</label>
+        <input type="range" min={0.05} max={0.95} step={0.01} value={cutoff} onChange={(e) => setCutoff(Number(e.target.value))} />
+        <span className="val">{cutoff.toFixed(2)}</span>
+      </div>
+      <div className="prop-row">
+        <label title="0 = hard cut-out edge">Edge softness</label>
+        <input type="range" min={0} max={0.8} step={0.01} value={softness} onChange={(e) => setSoftness(Number(e.target.value))} />
+        <span className="val">{softness.toFixed(2)}</span>
+      </div>
+      <p className={`hint-text ${state === 'error' ? 'error' : ''}`}>
+        {state === 'ready' && kept !== null ? `Keeping ${Math.round(kept * 100)}% of the image — preview is on the canvas.` : message}
+      </p>
+      <div className="footer">
+        <button className="btn" onClick={close}>Cancel</button>
+        <button
+          className="btn primary"
+          disabled={state !== 'ready'}
+          onClick={() => { applyRemoveBg(cutoff, softness); setModal(null); }}
+        >
+          Apply
+        </button>
       </div>
     </Modal>
   );

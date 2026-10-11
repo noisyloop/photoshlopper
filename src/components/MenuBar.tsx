@@ -88,6 +88,7 @@ export function MenuBar() {
       items: [
         { label: 'Image Size…', combo: 'mod+alt+i', action: () => setModal('imagesize'), disabled: !doc },
         { label: 'Canvas Size…', combo: 'mod+alt+c', action: () => setModal('canvassize'), disabled: !doc },
+        { label: 'Remove Background…', combo: 'mod+alt+b', action: () => setModal('removebg'), disabled: !layer },
         { label: '', separator: true },
         {
           label: 'Crop to Selection',
@@ -112,6 +113,7 @@ export function MenuBar() {
         { label: 'Add Layer Mask (from selection)', action: () => layer && addLayerMask(layer.id), disabled: !layer || !!layer?.mask },
         { label: 'Remove Layer Mask', action: () => layer && removeLayerMask(layer.id), disabled: !layer?.mask },
         { label: 'Rasterize Layer', action: () => layer && rasterizeLayer(layer.id), disabled: !layer || !layer.procedural },
+        { label: 'Remove Background…', combo: 'mod+alt+b', action: () => setModal('removebg'), disabled: !layer },
         { label: '', separator: true },
         { label: 'Merge Down', combo: 'mod+e', action: () => layer && mergeDown(layer.id), disabled: !layer },
         { label: 'Merge Visible', combo: 'mod+shift+e', action: mergeVisible, disabled: !doc },
