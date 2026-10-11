@@ -5,6 +5,9 @@
 import { useStore, insertLayerWithPixels, setStatus, activeLayer } from '../store';
 import { makeCanvas, canvasToImageData } from '../core/pixels';
 import type { Tool, PointerInfo, ViewInfo } from './framework';
+import { readTextMeta } from '../core/text';
+import { loadTextSettings } from '../core/textLayer';
+import { ensureFont } from '../core/fonts';
 
 let anchor: { x: number; y: number } | null = null;
 let current: { x: number; y: number } | null = null;
@@ -104,17 +107,13 @@ export const typeTool: Tool = {
     if (!s.doc || s.textSession) return;
     const layer = activeLayer();
     // clicking with the type tool while a text layer is active re-edits it
-    if (layer && layer.kind === 'text' && layer.meta?.text) {
-      useStore.setState({
-        textSession: {
-          layerId: layer.id,
-          x: (layer.meta.x as number) ?? p.docX,
-          y: (layer.meta.y as number) ?? p.docY,
-          text: String(layer.meta.text),
-        },
-      });
+    const meta = layer && layer.kind === 'text' ? readTextMeta(layer.meta) : null;
+    if (layer && meta) {
+      loadTextSettings(meta);
+      useStore.setState({ textSession: { layerId: layer.id, x: meta.x, y: meta.y, text: meta.text } });
       return;
     }
+    void ensureFont(s.fontFamily, s.fontSize);
     useStore.setState({ textSession: { layerId: null, x: p.docX, y: p.docY, text: '' } });
     setStatus('Type text. Enter commits, Shift+Enter for a new line, Esc cancels.');
   },

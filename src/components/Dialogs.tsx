@@ -1,8 +1,9 @@
-// New Document dialog, Fill dialog, and the searchable shortcut cheatsheet.
+// New Document, Image Size, Canvas Size and Fill dialogs, and the searchable
+// shortcut cheatsheet.
 
 import { useState } from 'react';
-import { useStore, newDoc, setModal, fillWith } from '../store';
-import { ransomise } from '../core/randomiser';
+import { useStore, newDoc, setModal, fillWith, resizeImage, resizeCanvas } from '../store';
+import { randomize } from '../core/randomizer';
 import { randomSeed } from '../core/rng';
 import { SHORTCUTS, formatCombo } from '../keymap';
 
@@ -61,12 +62,10 @@ export function NewDocDialog() {
           className="btn"
           onClick={() => {
             newDoc(clampSize(w), clampSize(h), background);
-            const seed = randomSeed();
-            useStore.setState({ seed });
-            ransomise(seed);
+            randomize(randomSeed());
           }}
         >
-          🎲 Create & Ransomise
+          🎲 Create & Randomize
         </button>
         <button className="btn primary" onClick={() => newDoc(clampSize(w), clampSize(h), background)}>Create</button>
       </div>
@@ -75,6 +74,78 @@ export function NewDocDialog() {
 }
 
 const clampSize = (v: number) => Math.max(8, Math.min(4096, Math.round(v) || 1024));
+
+export function ImageSizeDialog() {
+  const doc = useStore((s) => s.doc)!;
+  const [w, setW] = useState(doc.width);
+  const [h, setH] = useState(doc.height);
+  const [lock, setLock] = useState(true);
+  const ratio = doc.width / doc.height;
+  const setWidth = (v: number) => { setW(v); if (lock) setH(Math.max(1, Math.round(v / ratio))); };
+  const setHeight = (v: number) => { setH(v); if (lock) setW(Math.max(1, Math.round(v * ratio))); };
+  const pct = (f: number) => { setW(Math.round(doc.width * f)); setH(Math.round(doc.height * f)); };
+  return (
+    <Modal title="Image Size" onClose={() => setModal(null)}>
+      <p style={{ color: 'var(--text-2)', marginTop: 0 }}>
+        Resamples every layer to the new size. Currently {doc.width}×{doc.height}px.
+      </p>
+      <div className="form-row">
+        {[0.25, 0.5, 2].map((f) => <button key={f} className="btn" onClick={() => pct(f)}>{f * 100}%</button>)}
+      </div>
+      <div className="form-row">
+        <label>Width</label>
+        <input type="number" value={w} min={8} max={4096} onChange={(e) => setWidth(Number(e.target.value))} />
+        <button className={`btn icon ${lock ? 'active' : ''}`} title="Constrain proportions" onClick={() => setLock(!lock)}>{lock ? '🔗' : '⛓'}</button>
+        <label>Height</label>
+        <input type="number" value={h} min={8} max={4096} onChange={(e) => setHeight(Number(e.target.value))} />
+      </div>
+      <div className="footer">
+        <button className="btn" onClick={() => setModal(null)}>Cancel</button>
+        <button className="btn primary" onClick={() => { resizeImage(clampSize(w), clampSize(h)); setModal(null); }}>Resize</button>
+      </div>
+    </Modal>
+  );
+}
+
+const ANCHORS = [0, 0.5, 1];
+
+export function CanvasSizeDialog() {
+  const doc = useStore((s) => s.doc)!;
+  const [w, setW] = useState(doc.width);
+  const [h, setH] = useState(doc.height);
+  const [ax, setAx] = useState(0.5);
+  const [ay, setAy] = useState(0.5);
+  return (
+    <Modal title="Canvas Size" onClose={() => setModal(null)}>
+      <p style={{ color: 'var(--text-2)', marginTop: 0 }}>
+        Adds or trims space around the image without scaling it. Currently {doc.width}×{doc.height}px.
+      </p>
+      <div className="form-row">
+        <label>Width</label>
+        <input type="number" value={w} min={8} max={4096} onChange={(e) => setW(Number(e.target.value))} />
+        <label>Height</label>
+        <input type="number" value={h} min={8} max={4096} onChange={(e) => setH(Number(e.target.value))} />
+      </div>
+      <div className="form-row">
+        <label>Anchor</label>
+        <div className="anchor-grid">
+          {ANCHORS.map((y) => ANCHORS.map((x) => (
+            <button
+              key={`${x}-${y}`}
+              className={x === ax && y === ay ? 'active' : ''}
+              title="Existing image stays pinned here"
+              onClick={() => { setAx(x); setAy(y); }}
+            />
+          )))}
+        </div>
+      </div>
+      <div className="footer">
+        <button className="btn" onClick={() => setModal(null)}>Cancel</button>
+        <button className="btn primary" onClick={() => { resizeCanvas(clampSize(w), clampSize(h), ax, ay); setModal(null); }}>Apply</button>
+      </div>
+    </Modal>
+  );
+}
 
 export function FillDialog() {
   const fgc = useStore((s) => s.fg);

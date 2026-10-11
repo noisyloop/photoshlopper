@@ -21,8 +21,8 @@ npm run build      # tsc --noEmit + production bundle in dist/
 
 Requires a browser with WebGL2 (any current Chrome/Firefox/Safari).
 
-**60-second tour:** open the app → *Create* (or *Create & Ransomise*) → hit the
-big **🎲 RANSOMISER** button (or `Ctrl/⌘+Shift+R`) → paint over it with the
+**60-second tour:** open the app → *Create* (or *Create & Randomize*) → hit the
+big **🎲 RANDOMIZE** button (or `Ctrl/⌘+Shift+R`) → paint over it with the
 Brush (`B`) → add a layer (`Ctrl/⌘+Shift+N`) → **Export…** → PNG with
 *trim to content* for a sticker, the **3D Object** tab for a `.glb` sticker
 mesh, or the **Shader** tab for a Shadertoy-ready shader. Press `?` for the
@@ -40,6 +40,23 @@ searchable shortcut cheatsheet.
   Crop (Enter applies), Eyedropper, Brush, Eraser, Clone Stamp (Alt-click
   source), Paint Bucket, Gradient (linear/radial, FG→BG), Type (click to add,
   re-click a text layer to re-edit), Shape (rect/ellipse/line), Hand, Zoom.
+- **Type & text effects** — 28 fonts: 6 system stacks plus 22 self-hosted
+  display/script/retro faces (bundled via `@fontsource`, latin subset, loaded
+  lazily on first use — no font-CDN requests). The **Text panel** (shown with
+  the Type tool or a text layer selected) has bold/italic, alignment, letter
+  spacing, line height and stackable effects: **stroke**, **drop shadow**,
+  **outer glow**, **gradient fill** and **3D extrude**, plus one-click
+  presets (Meme, Neon, Retro 3D, Sunset, Shadow). Effects are stored in the
+  layer's meta, so a text layer stays re-editable and restylable; each
+  restyle is one undo step.
+- **Image size & import** — *Image ▸ Image Size…* (`Ctrl/⌘+Alt+I`) resamples
+  every layer, mask and the selection; *Image ▸ Canvas Size…*
+  (`Ctrl/⌘+Alt+C`) adds or trims space around a 3×3 anchor. Both keep
+  transforms and text layers aligned and are a single undo step. *File ▸
+  Import Image as Layer…* (`Ctrl/⌘+Shift+O`) or **drag & drop** images onto
+  the canvas (placed at the drop point) or the Layers panel to add them as
+  new layers — big images scale down to fit; with no document open the first
+  image sets the size. Dropping a `.pslop` / `.psd` opens it.
 - **Brush engine** — stamp-based with size/hardness/opacity/flow + spacing,
   pointer-pressure size, strokes buffered offscreen and committed as **one
   undo entry per stroke**, respects selections and layer locks. A **Brushes
@@ -58,11 +75,16 @@ searchable shortcut cheatsheet.
   kaleidoscope — each defined **once** with param metadata, edited in the
   Properties panel, and inlined by the shader exporter. Floyd–Steinberg dither
   ships as a destructive CPU filter (error diffusion is inherently sequential).
-- **Ransomiser** — seeded (mulberry32, seed shown + re-roll), weighted base
+- **Randomize** — seeded (mulberry32, seed shown + re-roll), weighted base
   pick (gradient / simplex noise field / voronoi / wave interference as
   procedural layers; flow field / scattered shapes as CPU-rendered raster),
   harmonious palette (analogous/triad/complementary), 1–2 moderate effect
-  layers, inserted at the bottom of the stack as a single undo entry.
+  layers, inserted at the bottom of the stack as a single undo entry. Every
+  click **replaces the previous roll** in place, so you can keep clicking
+  for new ideas — up to **50 rolls per document** (with a short cooldown
+  against click/key-repeat spam). Each rolled seed lands in the numbered
+  *ideas* strip; clicking one brings it back for free. Painting on or
+  duplicating a rolled layer makes it yours, and later rolls leave it alone.
 - **History** — command-pattern undo/redo, capped at 50 entries, pixel edits
   stored as dirty-rect region snapshots, History panel with click-to-jump.
 - **Keyboard** — Photoshop-parity keymap (see `?`); suppressed while typing.
@@ -92,7 +114,7 @@ searchable shortcut cheatsheet.
   constants, and layers composite bottom-to-top through the same blend GLSL
   the editor uses. Effects sample the composite below them through a
   per-layer `SRC(p)` macro bound to the previous stack function, so blur and
-  glitch work in one pass. A doc made only of Ransomiser/procedural layers is
+  glitch work in one pass. A doc made only of Randomize/procedural layers is
   fully self-contained (no textures) — ideal for Shadertoy. Targets:
   - **Raw WebGL2** — `#version 300 es` + `main()`, zipped with a minimal
     `index.html` runner (serve the folder over HTTP so textures load).

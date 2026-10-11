@@ -1,25 +1,30 @@
-// Right dock: Ransomiser card, Brushes, Color/Swatches, Layers, Properties
-// (procedural params of the active layer), History, and the Export button.
+// Right dock: Randomize card, Brushes, Color/Swatches, Text (effects for the
+// Type tool / active text layer), Layers, Properties (procedural params of the
+// active layer), History, and the Export button.
 
 import { useEffect, useRef, useState } from 'react';
 import {
   useStore, setModal, setActiveLayer, setLayerProps, setLayerPropsLive,
   addLayer, duplicateLayer, deleteLayer, mergeDown, addLayerMask, reorderLayer,
   activeLayer, jumpToHistory, updateProceduralParamLive, commitProceduralParam,
-  swapColors, resetColors, applyBrushPreset, type BrushSettings,
+  swapColors, resetColors, applyBrushPreset, MAX_ROLLS, type BrushSettings,
 } from '../store';
 import { getPixels } from '../core/pixels';
 import { BLEND_MODES } from '../core/blend';
 import { getProcDef } from '../core/procedural';
-import { ransomise } from '../core/randomiser';
+import { randomize } from '../core/randomizer';
 import { randomSeed, rgbToHex, hexToRgb01 } from '../core/rng';
 import { BRUSH_PRESETS, renderBrushPreview } from '../core/brushPresets';
+import { FONTS, FONT_GROUPS, ensureFont } from '../core/fonts';
+import { DEFAULT_TEXT_STYLE, TEXT_PRESETS, readTextMeta, type TextStyle } from '../core/text';
+import { restyleText, loadTextSettings, type TextPatch } from '../core/textLayer';
+import { importFiles, dragHasFiles } from '../core/importImage';
 import type { Layer, BlendMode, ParamValue } from '../types';
 
 export function RightDock() {
   return (
     <div className="dock">
-      <RansomiserPanel />
+      <RandomizerPanel />
       <div className="panel">
         <button className="btn primary" style={{ width: '100%' }} onClick={() => setModal('export')}>
           ⬇ Export…
@@ -27,6 +32,7 @@ export function RightDock() {
       </div>
       <BrushesPanel />
       <ColorPanel />
+      <TextPanel />
       <LayersPanel />
       <PropertiesPanel />
       <HistoryPanel />
@@ -79,23 +85,27 @@ function BrushesPanel() {
   );
 }
 
-// ---------- Ransomiser ----------
+// ---------- Randomizer ----------
 
-function RansomiserPanel() {
+function RandomizerPanel() {
   const seed = useStore((s) => s.seed);
+  const rollsUsed = useStore((s) => s.rollsUsed);
+  const ideas = useStore((s) => s.ideas);
+  const left = MAX_ROLLS - rollsUsed;
   return (
     <div className="panel">
       <button
-        className="ransomiser-btn"
-        title="Randomise a starting canvas"
-        onClick={() => {
-          const s = randomSeed();
-          useStore.setState({ seed: s });
-          ransomise(s);
-        }}
+        className="randomizer-btn"
+        title={left > 0 ? 'Generate a new random canvas (replaces the previous roll)' : 'Roll limit reached for this document'}
+        disabled={left <= 0}
+        onClick={() => randomize(randomSeed())}
       >
-        🎲 RANSOMISER
+        🎲 RANDOMIZE
       </button>
+      <div className="roll-meter" title={`${left} roll${left === 1 ? '' : 's'} left on this document`}>
+        <div className="bar"><div style={{ width: `${(rollsUsed / MAX_ROLLS) * 100}%` }} /></div>
+        <span>{rollsUsed}/{MAX_ROLLS}</span>
+      </div>
       <div className="seed-row">
         <span style={{ color: 'var(--text-2)' }}>seed</span>
         <input
@@ -106,10 +116,28 @@ function RansomiserPanel() {
             if (Number.isFinite(v)) useStore.setState({ seed: v >>> 0 });
           }}
         />
-        <button className="btn icon" title="Re-roll with this exact seed (reproducible)" onClick={() => ransomise(useStore.getState().seed)}>
+        <button
+          className="btn icon"
+          title="Generate with this exact seed (reproducible)"
+          onClick={() => { const sd = useStore.getState().seed; randomize(sd, { restore: true }); }}
+        >
           ↻
         </button>
       </div>
+      {ideas.length > 0 && (
+        <div className="ideas" title="Ideas rolled on this document — click to bring one back (free)">
+          {ideas.map((sd, i) => (
+            <button
+              key={sd}
+              className={sd === seed ? 'current' : ''}
+              title={`Idea ${i + 1} · seed ${sd}`}
+              onClick={() => randomize(sd, { restore: true })}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -143,6 +171,148 @@ function ColorPanel() {
           <button key={c} style={{ background: c }} title={c} onClick={() => useStore.setState({ fg: c })} />
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------- Text ----------
+
+function TextSlider({ label, value, min, max, step = 1, patch }: {
+  label: string; value: number; min: number; max: number; step?: number;
+  patch: (v: number) => TextPatch;
+}) {
+  return (
+    <div className="prop-row">
+      <label>{label}</label>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => void restyleText(patch(Number(e.target.value)), false)}
+        onPointerUp={(e) => void restyleText(patch(Number((e.target as HTMLInputElement).value)), true)}
+        onKeyUp={(e) => void restyleText(patch(Number((e.target as HTMLInputElement).value)), true)}
+      />
+      <span className="val">{Number(value.toFixed(2))}</span>
+    </div>
+  );
+}
+
+function TextColor({ value, patch }: { value: string; patch: (v: string) => TextPatch }) {
+  return (
+    <input
+      type="color"
+      value={value}
+      onChange={(e) => void restyleText(patch(e.target.value), false)}
+      onBlur={(e) => void restyleText(patch(e.target.value), true)}
+    />
+  );
+}
+
+function EffectSection({ label, on, onKey, children }: {
+  label: string; on: boolean; onKey: keyof TextStyle; children: React.ReactNode;
+}) {
+  return (
+    <div className={`fx-section ${on ? 'on' : ''}`}>
+      <label className="fx-head">
+        <input type="checkbox" checked={on} onChange={(e) => void restyleText({ style: { [onKey]: e.target.checked } }, true)} />
+        {label}
+      </label>
+      {on && <div className="fx-body">{children}</div>}
+    </div>
+  );
+}
+
+function TextPanel() {
+  const tool = useStore((s) => s.tool);
+  const st = useStore((s) => s.textStyle);
+  const font = useStore((s) => s.fontFamily);
+  const size = useStore((s) => s.fontSize);
+  const fg = useStore((s) => s.fg);
+  const activeText = useStore((s) => {
+    const l = s.doc?.layers.find((x) => x.id === s.doc?.activeLayerId);
+    return l && l.kind === 'text' ? l : null;
+  });
+  const activeTextId = activeText?.id ?? null;
+
+  // selecting a text layer pulls its look into the panel
+  useEffect(() => {
+    const meta = readTextMeta(activeText?.meta);
+    if (meta) loadTextSettings(meta);
+  }, [activeTextId]);
+
+  if (tool !== 'type' && !activeText) return null;
+  const style = (p: Partial<TextStyle>): TextPatch => ({ style: p });
+
+  return (
+    <div className="panel text-panel">
+      <h3>
+        Text
+        <span className="brush-readout">{activeText ? `editing "${activeText.name}"` : 'for new text'}</span>
+      </h3>
+      <div className="text-presets">
+        {TEXT_PRESETS.map((p) => (
+          <button
+            key={p.name}
+            className="btn"
+            onClick={() => void restyleText({ font: p.font, color: p.color, style: { ...DEFAULT_TEXT_STYLE, ...p.style } }, true)}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+      <div className="prop-row">
+        <label>Font</label>
+        <select
+          value={font}
+          style={{ fontFamily: font }}
+          onChange={(e) => { void ensureFont(e.target.value); void restyleText({ font: e.target.value }, true); }}
+        >
+          {!FONTS.some((f) => f.family === font) && <option value={font}>{font}</option>}
+          {FONT_GROUPS.map((g) => (
+            <optgroup key={g} label={g}>
+              {FONTS.filter((f) => f.group === g).map((f) => <option key={f.id} value={f.family}>{f.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+      <div className="text-row">
+        <input
+          type="number" min={6} max={400} value={size} title="Font size (px)"
+          onChange={(e) => { const v = Number(e.target.value); if (v >= 6 && v <= 400) void restyleText({ size: v }, true); }}
+        />
+        <TextColor value={fg} patch={(v) => ({ color: v })} />
+        <button className={`btn icon ${st.bold ? 'active' : ''}`} title="Bold" onClick={() => void restyleText(style({ bold: !st.bold }), true)}><b>B</b></button>
+        <button className={`btn icon ${st.italic ? 'active' : ''}`} title="Italic" onClick={() => void restyleText(style({ italic: !st.italic }), true)}><i>I</i></button>
+        {(['left', 'center', 'right'] as const).map((a) => (
+          <button key={a} className={`btn icon ${st.align === a ? 'active' : ''}`} title={`Align ${a}`} onClick={() => void restyleText(style({ align: a }), true)}>
+            {a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥'}
+          </button>
+        ))}
+      </div>
+      <TextSlider label="Spacing" value={st.letterSpacing} min={-10} max={60} patch={(v) => style({ letterSpacing: v })} />
+      <TextSlider label="Line height" value={st.lineHeight} min={0.7} max={3} step={0.05} patch={(v) => style({ lineHeight: v })} />
+
+      <EffectSection label="Stroke" on={st.strokeOn} onKey="strokeOn">
+        <TextSlider label="Width" value={st.strokeWidth} min={1} max={40} patch={(v) => style({ strokeWidth: v })} />
+        <div className="prop-row"><label>Color</label><TextColor value={st.strokeColor} patch={(v) => style({ strokeColor: v })} /></div>
+      </EffectSection>
+      <EffectSection label="Drop shadow" on={st.shadowOn} onKey="shadowOn">
+        <div className="prop-row"><label>Color</label><TextColor value={st.shadowColor} patch={(v) => style({ shadowColor: v })} /></div>
+        <TextSlider label="Opacity" value={st.shadowOpacity} min={0} max={1} step={0.01} patch={(v) => style({ shadowOpacity: v })} />
+        <TextSlider label="Blur" value={st.shadowBlur} min={0} max={60} patch={(v) => style({ shadowBlur: v })} />
+        <TextSlider label="Offset X" value={st.shadowX} min={-60} max={60} patch={(v) => style({ shadowX: v })} />
+        <TextSlider label="Offset Y" value={st.shadowY} min={-60} max={60} patch={(v) => style({ shadowY: v })} />
+      </EffectSection>
+      <EffectSection label="Outer glow" on={st.glowOn} onKey="glowOn">
+        <div className="prop-row"><label>Color</label><TextColor value={st.glowColor} patch={(v) => style({ glowColor: v })} /></div>
+        <TextSlider label="Size" value={st.glowSize} min={1} max={80} patch={(v) => style({ glowSize: v })} />
+      </EffectSection>
+      <EffectSection label="Gradient fill" on={st.gradientOn} onKey="gradientOn">
+        <div className="prop-row"><label>To color</label><TextColor value={st.gradientColor} patch={(v) => style({ gradientColor: v })} /></div>
+      </EffectSection>
+      <EffectSection label="3D extrude" on={st.extrudeOn} onKey="extrudeOn">
+        <div className="prop-row"><label>Color</label><TextColor value={st.extrudeColor} patch={(v) => style({ extrudeColor: v })} /></div>
+        <TextSlider label="Depth" value={st.extrudeDepth} min={1} max={60} patch={(v) => style({ extrudeDepth: v })} />
+        <TextSlider label="Angle" value={st.extrudeAngle} min={0} max={360} patch={(v) => style({ extrudeAngle: v })} />
+      </EffectSection>
     </div>
   );
 }
@@ -230,11 +400,23 @@ function LayerRow({ layer, isActive }: { layer: Layer; isActive: boolean }) {
 function LayersPanel() {
   const doc = useStore((s) => s.doc);
   const opacityBefore = useRef(1);
+  const [fileOver, setFileOver] = useState(false);
   if (!doc) return null;
   const active = doc.layers.find((l) => l.id === doc.activeLayerId);
   return (
-    <div className="panel">
-      <h3>Layers</h3>
+    <div
+      className={`panel ${fileOver ? 'file-over' : ''}`}
+      onDragOver={(e) => { if (dragHasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setFileOver(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false); }}
+      onDrop={(e) => {
+        if (!dragHasFiles(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setFileOver(false);
+        void importFiles([...e.dataTransfer.files]);
+      }}
+    >
+      <h3>Layers <span className="brush-readout">drop images here</span></h3>
       {active && (
         <div className="blend-row">
           <select

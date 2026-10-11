@@ -25,7 +25,7 @@ Playwright + the preinstalled Chromium works well:
 Flow gotchas:
 
 - The app opens on the **New document modal**. Click the `Create` button
-  with `exact: true` — "🎲 Create & Ransomise" also matches `name: 'Create'`.
+  with `exact: true` — "🎲 Create & Randomize" also matches `name: 'Create'`.
 - Paint by dragging on `canvas.view` with `page.mouse` (down → many small
   moves → up). One stroke = one history entry.
 - The status bar (`.statusbar .left`) is where errors/results surface —

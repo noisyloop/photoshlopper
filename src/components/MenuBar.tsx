@@ -8,6 +8,7 @@ import {
 } from '../store';
 import { savePslop, promptOpenPslop } from '../export/pslop';
 import { savePsd, promptOpenPsd } from '../export/psd';
+import { promptImportImage } from '../core/importImage';
 import { applyFloydSteinberg } from '../core/filters';
 import { PROC_DEFS } from '../core/procedural';
 import { maskBounds } from '../core/selection';
@@ -58,6 +59,7 @@ export function MenuBar() {
         { label: 'New…', combo: 'mod+n', action: () => setModal('newdoc') },
         { label: 'Open .pslop…', combo: 'mod+o', action: () => promptOpenPslop(setStatus) },
         { label: 'Import .psd…', action: () => promptOpenPsd(setStatus) },
+        { label: 'Import Image as Layer…', combo: 'mod+shift+o', action: promptImportImage },
         { label: '', separator: true },
         { label: 'Save .pslop', combo: 'mod+s', action: () => void savePslop(), disabled: !doc },
         { label: 'Export .psd (layered)', action: () => void savePsd(), disabled: !doc },
@@ -84,6 +86,9 @@ export function MenuBar() {
     {
       title: 'Image',
       items: [
+        { label: 'Image Size…', combo: 'mod+alt+i', action: () => setModal('imagesize'), disabled: !doc },
+        { label: 'Canvas Size…', combo: 'mod+alt+c', action: () => setModal('canvassize'), disabled: !doc },
+        { label: '', separator: true },
         {
           label: 'Crop to Selection',
           action: () => {

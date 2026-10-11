@@ -1,6 +1,10 @@
-// The Randomiser ("Ransomiser"). Seeded by mulberry32 — the same seed always
-// reproduces the same art. Drops a generative base onto the bottom of the
-// layer stack plus 1-2 moderate procedural effect layers, as ONE undo entry.
+// The Randomizer. Seeded by mulberry32 — the same seed always reproduces the
+// same art. Drops a generative base onto the bottom of the layer stack plus
+// 1-2 moderate procedural effect layers, as ONE undo entry. Each roll REPLACES
+// the previous roll's layers (tagged meta.randomizer) in place, so repeated
+// clicks give fresh ideas instead of hiding new art under the old base.
+// Rolls are capped at MAX_ROLLS per document; earlier seeds stay in `ideas`
+// and can be restored for free.
 //
 // Base art comes from a weighted set. Four of the six bases are procedural
 // layers with exact GLSL twins (gradient, noise field, voronoi, wave
@@ -14,7 +18,7 @@ import { identityTransform, newId } from '../types';
 import { mulberry32, generatePalette, randRange, randInt, pick, pickWeighted, rgbToHex, type Rng } from './rng';
 import { makeNode } from './procedural';
 import { makeCanvas, canvasToImageData, setPixels } from './pixels';
-import { useStore, pushHistory, bumpLayer, touch, newDoc, setStatus, requestFit } from '../store';
+import { useStore, pushHistory, bumpLayer, touch, newDoc, setStatus, requestFit, MAX_ROLLS } from '../store';
 
 type Vec3 = [number, number, number];
 
@@ -145,16 +149,33 @@ type BaseKind = 'gradient' | 'noise-field' | 'voronoi' | 'waves' | 'flow-field' 
 function makeLayer(name: string, kind: Layer['kind']): Layer {
   return {
     id: newId(), name, kind, visible: true, opacity: 1, blend: 'normal',
-    locked: false, transform: identityTransform(),
+    locked: false, transform: identityTransform(), meta: { randomizer: true },
   };
 }
 
-/** Run the Ransomiser with the given seed. Returns the seed actually used. */
-export function ransomise(seed: number): void {
+const COOLDOWN_MS = 150;
+let lastRollAt = 0;
+
+export const isRandomizerLayer = (l: Layer): boolean => l.meta?.randomizer === true;
+
+/**
+ * Run the Randomizer with the given seed. A normal roll counts toward the
+ * per-document cap; `restore` re-creates an idea already rolled on this doc
+ * and is free.
+ */
+export function randomize(seed: number, opts: { restore?: boolean } = {}): void {
+  const now = performance.now();
+  if (now - lastRollAt < COOLDOWN_MS) return; // swallow key-repeat / double-click bursts
   const state = useStore.getState();
   if (!state.doc) {
     newDoc(1024, 1024, 'transparent');
   }
+  const restore = !!opts.restore && useStore.getState().ideas.includes(seed);
+  if (!restore && useStore.getState().rollsUsed >= MAX_ROLLS) {
+    setStatus(`Randomize limit reached (${MAX_ROLLS}/${MAX_ROLLS} on this document) — pick a past idea, or start a new document`);
+    return;
+  }
+  lastRollAt = now;
   const doc = useStore.getState().doc!;
   const rng = mulberry32(seed);
   const { colors: palette, scheme } = generatePalette(rng, 5);
@@ -174,12 +195,12 @@ export function ransomise(seed: number): void {
 
   const newLayers: Layer[] = [];
   if (base === 'flow-field' || base === 'scatter') {
-    const layer = makeLayer(`Ransom ${base}`, 'raster');
+    const layer = makeLayer(`Random ${base}`, 'raster');
     const px = base === 'flow-field' ? renderFlowField(rng, w, h, palette) : renderScatter(rng, w, h, palette);
     setPixels(layer.id, px);
     newLayers.push(layer);
   } else {
-    const layer = makeLayer(`Ransom ${base}`, 'procedural');
+    const layer = makeLayer(`Random ${base}`, 'procedural');
     if (base === 'gradient') {
       layer.procedural = makeNode('gen-gradient', {
         ...colorParams,
@@ -224,26 +245,37 @@ export function ransomise(seed: number): void {
   const shuffled = [...effectPool].sort(() => rng() - 0.5);
   for (let i = 0; i < effectCount; i++) {
     const [type, params] = shuffled[i];
-    const layer = makeLayer(`Ransom ${type}`, 'adjustment');
+    const layer = makeLayer(`Random ${type}`, 'adjustment');
     layer.procedural = makeNode(type, params());
     newLayers.push(layer);
   }
 
-  // insert base at the bottom of the stack, its effects directly above it
+  // replace the previous roll in place (or insert at the bottom of the stack),
+  // effects directly above their base
   const before = useStore.getState().doc!;
+  const firstOld = before.layers.findIndex(isRandomizerLayer);
+  const kept = before.layers.filter((l) => !isRandomizerLayer(l));
+  const insertAt = firstOld < 0 ? 0 : before.layers.slice(0, firstOld).filter((l) => !isRandomizerLayer(l)).length;
+  const layers = [...kept.slice(0, insertAt), ...newLayers, ...kept.slice(insertAt)];
+  const activeKept = kept.some((l) => l.id === before.activeLayerId);
   const after: Doc = {
     ...before,
-    layers: [...newLayers, ...before.layers],
-    activeLayerId: before.layers.length
-      ? before.layers[before.layers.length - 1].id
-      : newLayers[newLayers.length - 1].id,
+    layers,
+    activeLayerId: activeKept
+      ? before.activeLayerId
+      : kept.length ? kept[kept.length - 1].id : newLayers[newLayers.length - 1].id,
   };
-  useStore.setState({ doc: after, seed });
+  const replaced = before.layers.length - kept.length;
+  const s0 = useStore.getState();
+  const rollsUsed = restore ? s0.rollsUsed : s0.rollsUsed + 1;
+  const ideas = s0.ideas.includes(seed) ? s0.ideas : [...s0.ideas, seed];
+  useStore.setState({ doc: after, seed, rollsUsed, ideas });
   for (const l of newLayers) bumpLayer(l.id);
   pushHistory({
-    label: 'Ransomise',
+    label: restore ? 'Restore Idea' : 'Randomize',
     undo: () => {
       useStore.setState({ doc: before });
+      for (const l of before.layers) bumpLayer(l.id);
       touch();
     },
     redo: () => {
@@ -252,5 +284,6 @@ export function ransomise(seed: number): void {
     },
   });
   requestFit();
-  setStatus(`Ransomised! seed ${seed} · ${base} base · ${scheme} palette · ${newLayers.length - 1} effect(s)`);
+  const count = restore ? 'restored idea' : `roll ${rollsUsed}/${MAX_ROLLS}`;
+  setStatus(`Randomized! ${count} · seed ${seed} · ${base} base · ${scheme} palette · ${newLayers.length - 1} effect(s)${replaced ? ' · replaced previous roll (undo brings it back)' : ''}`);
 }

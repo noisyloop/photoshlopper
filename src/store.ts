@@ -16,6 +16,10 @@ import {
 import { getCompositor } from './core/compositor';
 import { makeNode, getProcDef } from './core/procedural';
 import { randomSeed } from './core/rng';
+import { DEFAULT_TEXT_STYLE, readTextMeta, type TextStyle } from './core/text';
+
+/** Max Randomize rolls per document (each roll is a full-canvas generate). */
+export const MAX_ROLLS = 50;
 
 export interface HistoryEntry {
   label: string;
@@ -63,7 +67,12 @@ interface EditorState {
   shapeStrokeWidth: number;
   fontSize: number;
   fontFamily: string;
+  textStyle: TextStyle;
   seed: number;
+  /** Randomize rolls used on the current document (capped at MAX_ROLLS) */
+  rollsUsed: number;
+  /** seeds rolled on the current document, newest last — the "ideas" strip */
+  ideas: number[];
   zoom: number;
   panX: number;
   panY: number;
@@ -71,7 +80,7 @@ interface EditorState {
   viewportH: number;
   screenMode: number; // 0 normal, 1 no menu, 2 canvas only
   panelsHidden: boolean;
-  modal: null | 'export' | 'newdoc' | 'shortcuts' | 'fill';
+  modal: null | 'export' | 'newdoc' | 'shortcuts' | 'fill' | 'imagesize' | 'canvassize';
   status: string;
   past: HistoryEntry[];
   future: HistoryEntry[];
@@ -96,7 +105,10 @@ export const useStore = create<EditorState>(() => ({
   shapeStrokeWidth: 4,
   fontSize: 48,
   fontFamily: 'system-ui, sans-serif',
+  textStyle: { ...DEFAULT_TEXT_STYLE },
   seed: randomSeed(),
+  rollsUsed: 0,
+  ideas: [],
   zoom: 1,
   panX: 0,
   panY: 0,
@@ -244,7 +256,7 @@ function docCommand(label: string, apply: (doc: Doc) => Doc, opts?: {
 export function newDoc(width: number, height: number, background: Doc['background'] = 'transparent'): void {
   const layer = makeRasterLayer('Layer 1', width, height);
   const doc: Doc = { width, height, dpi: 72, layers: [layer], activeLayerId: layer.id, background };
-  set({ doc, past: [], future: [], modal: null, layerVersions: { [layer.id]: 1 }, transformSession: null, textSession: null });
+  set({ doc, past: [], future: [], modal: null, layerVersions: { [layer.id]: 1 }, transformSession: null, textSession: null, rollsUsed: 0, ideas: [] });
   touch();
   requestFit();
 }
@@ -253,7 +265,7 @@ export function newDoc(width: number, height: number, background: Doc['backgroun
 export function replaceDoc(doc: Doc): void {
   const versions: Record<string, number> = {};
   for (const l of doc.layers) versions[l.id] = 1;
-  set({ doc, past: [], future: [], modal: null, layerVersions: versions, transformSession: null, textSession: null });
+  set({ doc, past: [], future: [], modal: null, layerVersions: versions, transformSession: null, textSession: null, rollsUsed: 0, ideas: [] });
   touch();
   requestFit();
 }
@@ -321,7 +333,7 @@ export function duplicateLayer(id: string): void {
     transform: { ...src.transform },
     mask: src.mask ? new Uint8ClampedArray(src.mask) : undefined,
     procedural: src.procedural ? { type: src.procedural.type, params: { ...src.procedural.params } } : undefined,
-    meta: src.meta ? { ...src.meta } : undefined,
+    meta: src.meta ? { ...src.meta, randomizer: undefined } : undefined, // a copy is the user's, not a re-rollable roll
   };
   const px = getPixels(id);
   if (px) setPixels(copy.id, cloneImageData(px));
@@ -494,6 +506,13 @@ export function commitPixels(layerId: string, label: string, before: ImageData, 
   const afterSnap: RegionSnapshot = snapshotRegion(after, rect);
   setPixels(layerId, after);
   bumpLayer(layerId);
+  // painting on a Randomize layer makes it the user's: the next roll keeps it
+  if (get().doc?.layers.some((l) => l.id === layerId && l.meta?.randomizer)) {
+    updateDoc((d) => ({
+      ...d,
+      layers: d.layers.map((l) => (l.id === layerId ? { ...l, meta: { ...l.meta, randomizer: undefined } } : l)),
+    }));
+  }
   pushHistory({
     label,
     undo: () => {
@@ -762,45 +781,42 @@ export function togglePanels(): void {
   set((s) => ({ panelsHidden: !s.panelsHidden }));
 }
 
-// ---------- crop ----------
+// ---------- crop / canvas size / image size ----------
 
-export function cropDoc(rect: { x: number; y: number; w: number; h: number }): void {
-  const s = get();
-  const doc = s.doc;
+const MAX_DOC_SIDE = 4096;
+
+/**
+ * Change the doc's geometry for every layer at once, as one history entry.
+ * `mapPixels` rebuilds a layer buffer at the new size, `mapMask` a doc-sized
+ * mask (`fill` = value for newly exposed area), `mapLayer` patches transforms
+ * and text meta so re-editing stays aligned.
+ */
+function geometryCommand(label: string, w: number, h: number, ops: {
+  mapPixels: (src: HTMLCanvasElement) => HTMLCanvasElement;
+  mapMask: (m: Uint8ClampedArray, fill: number) => Uint8ClampedArray;
+  mapLayer: (l: Layer) => Layer;
+}): void {
+  const doc = get().doc;
   if (!doc) return;
-  const x = Math.max(0, Math.round(rect.x));
-  const y = Math.max(0, Math.round(rect.y));
-  const w = Math.min(doc.width - x, Math.round(rect.w));
-  const h = Math.min(doc.height - y, Math.round(rect.h));
-  if (w < 1 || h < 1) return;
   const savedPixels = new Map<string, ImageData>();
   for (const l of doc.layers) {
     const px = getPixels(l.id);
     if (px) savedPixels.set(l.id, px);
   }
   const before = cloneDoc(doc);
-  // rebase every layer's pixels into the new doc rect
-  for (const l of doc.layers) {
-    const px = getPixels(l.id);
-    if (!px) continue;
-    const c = makeCanvas(w, h);
-    c.getContext('2d')!.drawImage(imageDataToCanvas(px), -x, -y);
-    setPixels(l.id, canvasToImageData(c));
-  }
-  const cropMask = (m?: Uint8ClampedArray) => {
-    if (!m) return undefined;
-    const out = new Uint8ClampedArray(w * h);
-    for (let yy = 0; yy < h; yy++) {
-      out.set(m.subarray((y + yy) * doc.width + x, (y + yy) * doc.width + x + w), yy * w);
-    }
-    return out;
-  };
+  for (const [id, px] of savedPixels) setPixels(id, canvasToImageData(ops.mapPixels(imageDataToCanvas(px))));
   const after: Doc = {
     ...cloneDoc(doc),
     width: w,
     height: h,
-    selection: cropMask(doc.selection),
-    layers: doc.layers.map((l) => ({ ...l, transform: { ...l.transform }, mask: cropMask(l.mask) })),
+    selection: doc.selection ? ops.mapMask(doc.selection, 0) : undefined,
+    layers: doc.layers.map((l) => ops.mapLayer({
+      ...l,
+      transform: { ...l.transform },
+      mask: l.mask ? ops.mapMask(l.mask, 255) : undefined,
+      procedural: l.procedural ? { type: l.procedural.type, params: { ...l.procedural.params } } : undefined,
+      meta: l.meta ? { ...l.meta } : undefined,
+    })),
   };
   set({ doc: after });
   const afterPixels = new Map<string, ImageData>();
@@ -809,20 +825,149 @@ export function cropDoc(rect: { x: number; y: number; w: number; h: number }): v
     if (px) afterPixels.set(l.id, px);
   }
   pushHistory({
-    label: 'Crop',
+    label,
     undo: () => {
       for (const [id, px] of savedPixels) setPixels(id, px);
       set({ doc: cloneDoc(before) });
       for (const l of before.layers) bumpLayer(l.id);
+      requestFit();
     },
     redo: () => {
       for (const [id, px] of afterPixels) setPixels(id, px);
       set({ doc: cloneDoc(after) });
       for (const l of after.layers) bumpLayer(l.id);
+      requestFit();
     },
   });
   for (const l of after.layers) bumpLayer(l.id);
   requestFit();
+}
+
+/**
+ * Re-frame the doc to w×h with existing content offset by (ox, oy) — no
+ * resampling. Used by Crop (negative offsets) and Canvas Size (anchoring).
+ */
+export function reframeDoc(label: string, w: number, h: number, ox: number, oy: number): void {
+  const doc = get().doc;
+  if (!doc) return;
+  w = Math.round(w);
+  h = Math.round(h);
+  ox = Math.round(ox);
+  oy = Math.round(oy);
+  if (w < 1 || h < 1 || w > MAX_DOC_SIDE || h > MAX_DOC_SIDE) {
+    setStatus(`Size must be between 1 and ${MAX_DOC_SIDE}px`);
+    return;
+  }
+  const ow = doc.width;
+  const oh = doc.height;
+  // keep transformed layers visually in place even though the pivot (doc center) moves
+  const dX = ow / 2 + ox - w / 2;
+  const dY = oh / 2 + oy - h / 2;
+  geometryCommand(label, w, h, {
+    mapPixels: (src) => {
+      const c = makeCanvas(w, h);
+      c.getContext('2d')!.drawImage(src, ox, oy);
+      return c;
+    },
+    mapMask: (m, fill) => {
+      const out = new Uint8ClampedArray(w * h).fill(fill);
+      const x0 = Math.max(0, ox);
+      const x1 = Math.min(w, ox + ow);
+      if (x1 <= x0) return out;
+      for (let y = Math.max(0, oy); y < Math.min(h, oy + oh); y++) {
+        const sy = y - oy;
+        out.set(m.subarray(sy * ow + (x0 - ox), sy * ow + (x1 - ox)), y * w + x0);
+      }
+      return out;
+    },
+    mapLayer: (l) => {
+      const t = l.transform;
+      const cos = Math.cos(t.rotation);
+      const sin = Math.sin(t.rotation);
+      const rx = (dX * t.scaleX) * cos - (dY * t.scaleY) * sin;
+      const ry = (dX * t.scaleX) * sin + (dY * t.scaleY) * cos;
+      const next = { ...l, transform: { ...t, x: t.x + dX - rx, y: t.y + dY - ry } };
+      if (next.meta && readTextMeta(next.meta)) {
+        next.meta = { ...next.meta, x: Number(next.meta.x) + ox, y: Number(next.meta.y) + oy };
+      }
+      return next;
+    },
+  });
+}
+
+export function cropDoc(rect: { x: number; y: number; w: number; h: number }): void {
+  const doc = get().doc;
+  if (!doc) return;
+  const x = Math.max(0, Math.round(rect.x));
+  const y = Math.max(0, Math.round(rect.y));
+  const w = Math.min(doc.width - x, Math.round(rect.w));
+  const h = Math.min(doc.height - y, Math.round(rect.h));
+  if (w < 1 || h < 1) return;
+  reframeDoc('Crop', w, h, -x, -y);
+}
+
+/** Canvas Size: anchor 0 / 0.5 / 1 on each axis = left/center/right, top/middle/bottom. */
+export function resizeCanvas(w: number, h: number, anchorX: number, anchorY: number): void {
+  const doc = get().doc;
+  if (!doc) return;
+  reframeDoc('Canvas Size', w, h, (w - doc.width) * anchorX, (h - doc.height) * anchorY);
+}
+
+/** Image Size: resample every layer (and masks/selection) to w×h. */
+export function resizeImage(w: number, h: number): void {
+  const doc = get().doc;
+  if (!doc) return;
+  w = Math.round(w);
+  h = Math.round(h);
+  if (w < 1 || h < 1 || w > MAX_DOC_SIDE || h > MAX_DOC_SIDE) {
+    setStatus(`Size must be between 1 and ${MAX_DOC_SIDE}px`);
+    return;
+  }
+  const ow = doc.width;
+  const oh = doc.height;
+  const sx = w / ow;
+  const sy = h / oh;
+  const sAvg = (sx + sy) / 2;
+  const resample = (src: HTMLCanvasElement) => {
+    const c = makeCanvas(w, h);
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, w, h);
+    return c;
+  };
+  geometryCommand('Image Size', w, h, {
+    mapPixels: resample,
+    mapMask: (m) => {
+      const img = canvasToImageData(resample(maskToCanvas(m, ow, oh)));
+      const out = new Uint8ClampedArray(w * h);
+      for (let i = 0; i < out.length; i++) out[i] = img.data[i * 4 + 3];
+      return out;
+    },
+    mapLayer: (l) => {
+      const next = { ...l, transform: { ...l.transform, x: l.transform.x * sx, y: l.transform.y * sy } };
+      const tm = readTextMeta(next.meta);
+      if (tm && next.meta) {
+        const st = tm.style;
+        next.meta = {
+          ...next.meta,
+          x: tm.x * sx,
+          y: tm.y * sy,
+          size: Math.max(1, Math.round(tm.size * sAvg)),
+          style: {
+            ...st,
+            letterSpacing: st.letterSpacing * sAvg,
+            strokeWidth: st.strokeWidth * sAvg,
+            shadowBlur: st.shadowBlur * sAvg,
+            shadowX: st.shadowX * sx,
+            shadowY: st.shadowY * sy,
+            glowSize: st.glowSize * sAvg,
+            extrudeDepth: st.extrudeDepth * sAvg,
+          },
+        };
+      }
+      return next;
+    },
+  });
 }
 
 // ---------- history jump (History panel) ----------
