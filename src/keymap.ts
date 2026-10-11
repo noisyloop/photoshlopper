@@ -10,9 +10,10 @@ import {
   beginTransform, commitTransform, cancelTransform, setStatus,
   clearSelectionArea, activeLayer,
 } from './store';
-import { ransomise } from './core/randomiser';
+import { randomize } from './core/randomizer';
 import { savePslop, promptOpenPslop } from './export/pslop';
 import { applyCrop, cancelCrop } from './tools/nav';
+import { promptImportImage } from './core/importImage';
 import { randomSeed } from './core/rng';
 
 export interface Shortcut {
@@ -76,8 +77,12 @@ export const SHORTCUTS: Shortcut[] = [
   // file
   { combo: 'mod+n', label: 'New document (browser may reserve this)', category: 'File', action: () => setModal('newdoc'), prevent: true },
   { combo: 'mod+o', label: 'Open .pslop project', category: 'File', action: () => promptOpenPslop(setStatus), prevent: true },
+  { combo: 'mod+shift+o', label: 'Import image as layer (or drag & drop)', category: 'File', action: promptImportImage, prevent: true },
   { combo: 'mod+s', label: 'Save .pslop project', category: 'File', action: () => void savePslop(), prevent: true },
   { combo: 'mod+shift+s', label: 'Save As (export dialog)', category: 'File', action: () => setModal('export'), prevent: true },
+  // image
+  { combo: 'mod+alt+i', label: 'Image Size (resample)', category: 'Image', action: () => { if (useStore.getState().doc) setModal('imagesize'); }, prevent: true },
+  { combo: 'mod+alt+c', label: 'Canvas Size (add/trim space)', category: 'Image', action: () => { if (useStore.getState().doc) setModal('canvassize'); }, prevent: true },
   // select
   { combo: 'mod+a', label: 'Select All', category: 'Select', action: selectAll, prevent: true },
   { combo: 'mod+d', label: 'Deselect', category: 'Select', action: deselect, prevent: true },
@@ -98,12 +103,8 @@ export const SHORTCUTS: Shortcut[] = [
   { combo: 'tab', label: 'Toggle panels', category: 'View', action: togglePanels, prevent: true },
   // the star
   {
-    combo: 'mod+shift+r', label: 'Ransomiser! (randomise a starting canvas)', category: 'Ransomiser',
-    action: () => {
-      const seed = randomSeed();
-      useStore.setState({ seed });
-      ransomise(seed);
-    },
+    combo: 'mod+shift+r', label: 'Randomize! (generate a starting canvas — up to 50 rolls per doc)', category: 'Randomize',
+    action: () => randomize(randomSeed()),
     prevent: true,
   },
   { combo: '?', label: 'Shortcut cheatsheet', category: 'Help', action: () => setModal('shortcuts') },
@@ -119,6 +120,8 @@ function comboFromEvent(e: KeyboardEvent): string {
   if (e.ctrlKey || e.metaKey) parts.push('mod');
   if (e.altKey) parts.push('alt');
   let key = e.key.toLowerCase();
+  // macOS Option turns letters into symbols (⌥I = ˆ); match on the physical key
+  if (e.altKey && /^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
   // shift is part of the printed character for symbols; only include it for letters/specials
   const symbolKeys = new Set(['{', '}', '?', '+', '_']);
   if (e.shiftKey && !symbolKeys.has(e.key)) parts.push('shift');

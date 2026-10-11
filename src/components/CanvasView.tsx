@@ -2,11 +2,15 @@
 // rulers, selection marching ants, tool overlays, brush cursor, and the
 // inline text-editing overlay. Pointer events are converted to doc space and
 // routed to the active tool (or the transform session / temp space-pan).
+// Image files dropped on the viewport become new layers at the drop point.
 
-import { useEffect, useRef } from 'react';
-import { useStore, fitToScreen, consumeFitRequest, setView, zoomAt, insertLayerWithPixels, commitPixels, setLayerPropsLive } from '../store';
+import { useEffect, useRef, useState } from 'react';
+import { useStore, fitToScreen, consumeFitRequest, setView, zoomAt } from '../store';
 import { getCompositor } from '../core/compositor';
-import { getPixels, makeCanvas, canvasToImageData } from '../core/pixels';
+import { makeCanvas } from '../core/pixels';
+import { commitTextSession } from '../core/textLayer';
+import { textStyleCss } from '../core/text';
+import { importFiles, dragHasFiles } from '../core/importImage';
 import { traceContours, type Point } from '../core/contours';
 import { TOOLS } from '../tools';
 import { drawBrushCursor } from '../tools/paint';
@@ -25,6 +29,9 @@ export function CanvasView() {
   const panY = useStore((s) => s.panY);
   const fontSize = useStore((s) => s.fontSize);
   const fg = useStore((s) => s.fg);
+  const fontFamily = useStore((s) => s.fontFamily);
+  const textStyle = useStore((s) => s.textStyle);
+  const [dropping, setDropping] = useState(false);
 
   const spaceHeld = useRef(false);
   const buttonDown = useRef(false);
@@ -66,7 +73,7 @@ export function CanvasView() {
         ctx.fillStyle = '#6f747e';
         ctx.font = '13px system-ui';
         ctx.textAlign = 'center';
-        ctx.fillText('No document — File ▸ New, or hit the Ransomiser', vw / 2, vh / 2);
+        ctx.fillText('No document — File ▸ New, drop an image here, or hit Randomize', vw / 2, vh / 2);
         return;
       }
       if (consumeFitRequest()) fitToScreen();
@@ -247,35 +254,46 @@ export function CanvasView() {
   }, [textSession]);
 
   const commitText = (cancel: boolean) => {
-    const s = useStore.getState();
-    const session = s.textSession;
-    if (!session || !s.doc) return;
-    const text = textRef.current?.value ?? '';
-    useStore.setState({ textSession: null });
-    if (cancel || !text.trim()) return;
-    const c = makeCanvas(s.doc.width, s.doc.height);
-    const ctx = c.getContext('2d')!;
-    ctx.font = `${s.fontSize}px ${s.fontFamily}`;
-    ctx.fillStyle = s.fg;
-    ctx.textBaseline = 'top';
-    text.split('\n').forEach((line, i) => ctx.fillText(line, session.x, session.y + i * s.fontSize * 1.25));
-    const pixels = canvasToImageData(c);
-    const meta = { text, x: session.x, y: session.y, size: s.fontSize, font: s.fontFamily, color: s.fg };
-    if (session.layerId) {
-      const before = getPixels(session.layerId);
-      if (before) {
-        commitPixels(session.layerId, 'Edit Text', before, pixels);
-        setLayerPropsLive(session.layerId, { meta });
-      }
-    } else {
-      insertLayerWithPixels(text.split('\n')[0].slice(0, 24) || 'Text', 'text', pixels, meta, 'New Text Layer');
+    if (!useStore.getState().textSession) return;
+    if (cancel) {
+      useStore.setState({ textSession: null });
+      return;
     }
+    void commitTextSession(textRef.current?.value ?? '');
   };
+
+  const onDrop = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    setDropping(false);
+    const s = useStore.getState();
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const at = s.doc
+      ? { x: (e.clientX - rect.left - s.panX) / s.zoom, y: (e.clientY - rect.top - s.panY) / s.zoom }
+      : undefined;
+    void importFiles([...e.dataTransfer.files], at);
+  };
+
+  const overlayW = Math.max(120, 300 * zoom);
+  const overlayLeft = textSession
+    ? panX + textSession.x * zoom - (textStyle.align === 'center' ? overlayW / 2 : textStyle.align === 'right' ? overlayW : 0)
+    : 0;
 
   const cursor = spaceHeld.current ? 'grab' : transformActive() ? 'move' : TOOLS[tool].cursor;
 
   return (
-    <div className="viewport" ref={wrapRef}>
+    <div
+      className={`viewport ${dropping ? 'dropping' : ''}`}
+      ref={wrapRef}
+      onDragOver={(e) => {
+        if (!dragHasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
+      onDrop={onDrop}
+    >
       <canvas
         ref={canvasRef}
         className="view"
@@ -292,12 +310,12 @@ export function CanvasView() {
           className="text-overlay"
           defaultValue={textSession.text}
           style={{
-            left: panX + textSession.x * zoom,
+            ...textStyleCss({ color: fg, style: textStyle }, zoom),
+            left: overlayLeft,
             top: panY + textSession.y * zoom,
             fontSize: fontSize * zoom,
-            color: fg,
-            fontFamily: useStore.getState().fontFamily,
-            width: Math.max(120, 300 * zoom),
+            fontFamily,
+            width: overlayW,
             height: Math.max(40, fontSize * zoom * 2.6),
           }}
           onKeyDown={(e) => {
@@ -311,6 +329,7 @@ export function CanvasView() {
           onBlur={() => commitText(false)}
         />
       )}
+      {dropping && <div className="drop-hint">Drop images to add them as new layers</div>}
     </div>
   );
 }

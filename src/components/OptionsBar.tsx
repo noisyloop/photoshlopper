@@ -1,6 +1,8 @@
 import { useStore, setBrushSettings, applyBrushPreset } from '../store';
 import { BRUSH_PRESETS } from '../core/brushPresets';
 import { applyCrop, cancelCrop } from '../tools/nav';
+import { FONTS, FONT_GROUPS, ensureFont } from '../core/fonts';
+import { restyleText } from '../core/textLayer';
 
 function Slider({ label, value, min, max, step = 1, onChange, format }: {
   label: string; value: number; min: number; max: number; step?: number;
@@ -107,18 +109,20 @@ export function OptionsBar() {
         <>
           <span className="opt">
             <span>Size</span>
-            <input type="number" value={s.fontSize} min={6} max={400} onChange={(e) => useStore.setState({ fontSize: Number(e.target.value) || 48 })} />
+            <input type="number" value={s.fontSize} min={6} max={400} onChange={(e) => { const v = Number(e.target.value); if (v >= 6 && v <= 400) void restyleText({ size: v }, true); }} />
           </span>
           <span className="opt">
             <span>Font</span>
-            <select value={s.fontFamily} onChange={(e) => useStore.setState({ fontFamily: e.target.value })}>
-              <option value="system-ui, sans-serif">Sans</option>
-              <option value="Georgia, serif">Serif</option>
-              <option value="'Courier New', monospace">Mono</option>
-              <option value="'Comic Sans MS', cursive">Comic</option>
+            <select value={s.fontFamily} onChange={(e) => { void ensureFont(e.target.value); void restyleText({ font: e.target.value }, true); }}>
+              {!FONTS.some((f) => f.family === s.fontFamily) && <option value={s.fontFamily}>{s.fontFamily}</option>}
+              {FONT_GROUPS.map((g) => (
+                <optgroup key={g} label={g}>
+                  {FONTS.filter((f) => f.group === g).map((f) => <option key={f.id} value={f.family}>{f.label}</option>)}
+                </optgroup>
+              ))}
             </select>
           </span>
-          <span className="hint">Click canvas to type · Enter commits · click a text layer to re-edit</span>
+          <span className="hint">Click canvas to type · Enter commits · click a text layer to re-edit · effects in the Text panel →</span>
         </>
       );
       break;
