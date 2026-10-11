@@ -451,6 +451,7 @@ function LayersPanel() {
         <button className="btn icon" title="New layer (Ctrl+Shift+N)" onClick={() => void addLayer()}>＋</button>
         <button className="btn icon" title="Duplicate layer (Ctrl+J)" onClick={() => active && duplicateLayer(active.id)}>⧉</button>
         <button className="btn icon" title="Add layer mask from selection" onClick={() => active && addLayerMask(active.id)}>▣</button>
+        <button className="btn icon" title="Remove background (Ctrl+Alt+B)" onClick={() => setModal('removebg')}>✂</button>
         <button className="btn icon" title="Merge down (Ctrl+E)" onClick={() => active && mergeDown(active.id)}>⤵</button>
         <button className="btn icon" title="Delete layer" onClick={() => active && deleteLayer(active.id)}>🗑</button>
       </div>

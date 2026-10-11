@@ -7,7 +7,7 @@ import { ToolRail } from './components/ToolRail';
 import { CanvasView } from './components/CanvasView';
 import { RightDock } from './components/RightDock';
 import { StatusBar } from './components/StatusBar';
-import { NewDocDialog, FillDialog, ShortcutsModal, ImageSizeDialog, CanvasSizeDialog } from './components/Dialogs';
+import { NewDocDialog, FillDialog, ShortcutsModal, ImageSizeDialog, CanvasSizeDialog, RemoveBgDialog } from './components/Dialogs';
 import { ExportDialog } from './components/ExportDialog';
 
 export default function App() {
@@ -46,6 +46,7 @@ export default function App() {
       {modal === 'export' && <ExportDialog />}
       {modal === 'imagesize' && hasDoc && <ImageSizeDialog />}
       {modal === 'canvassize' && hasDoc && <CanvasSizeDialog />}
+      {modal === 'removebg' && hasDoc && <RemoveBgDialog />}
     </div>
   );
 }

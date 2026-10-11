@@ -615,3 +615,9 @@ kbd {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 5px; border: 2px solid var(--bg-1); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* side-docked modal over an undimmed canvas (live previews) */
+.modal-backdrop.side { background: transparent; pointer-events: none; justify-content: flex-start; align-items: flex-start; padding: 80px 0 0 70px; }
+.modal-backdrop.side .modal { pointer-events: auto; width: min(380px, 92vw); }
+.hint-text { color: var(--text-2); margin: 4px 0 10px; line-height: 1.4; }
+.hint-text.error { color: var(--danger); }

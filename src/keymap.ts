@@ -83,6 +83,7 @@ export const SHORTCUTS: Shortcut[] = [
   // image
   { combo: 'mod+alt+i', label: 'Image Size (resample)', category: 'Image', action: () => { if (useStore.getState().doc) setModal('imagesize'); }, prevent: true },
   { combo: 'mod+alt+c', label: 'Canvas Size (add/trim space)', category: 'Image', action: () => { if (useStore.getState().doc) setModal('canvassize'); }, prevent: true },
+  { combo: 'mod+alt+b', label: 'Remove background of the active layer', category: 'Image', action: () => { if (useStore.getState().doc) setModal('removebg'); }, prevent: true },
   // select
   { combo: 'mod+a', label: 'Select All', category: 'Select', action: selectAll, prevent: true },
   { combo: 'mod+d', label: 'Deselect', category: 'Select', action: deselect, prevent: true },

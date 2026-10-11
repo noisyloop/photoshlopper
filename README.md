@@ -75,6 +75,17 @@ searchable shortcut cheatsheet.
   kaleidoscope — each defined **once** with param metadata, edited in the
   Properties panel, and inlined by the shader exporter. Floyd–Steinberg dither
   ships as a destructive CPU filter (error diffusion is inherently sequential).
+- **Remove Background** — *Layer ▸ Remove Background…* (`Ctrl/⌘+Alt+B`, or
+  ✂ in the Layers panel). **Main subject (AI)** keeps the main object — a car,
+  a person, a pet — and removes everything behind it, using the bundled
+  U²-Net-P segmentation model (4.5 MB, Apache-2.0, see
+  `public/models/README.md`) run on-device with onnxruntime-web; the runtime
+  and model load lazily on first use and nothing is uploaded anywhere.
+  **Plain backdrop color** flood-removes the solid color touching the image
+  edges (best for product shots on white). Edge cutoff / softness sliders
+  refine the cut with a live preview on the canvas; Apply is one undo step.
+  The small model handles clear subjects well; on very busy scenes some
+  background may survive — raise *Edge cutoff* or erase the rest.
 - **Randomize** — seeded (mulberry32, seed shown + re-roll), weighted base
   pick (gradient / simplex noise field / voronoi / wave interference as
   procedural layers; flow field / scattered shapes as CPU-rendered raster),
