@@ -495,9 +495,10 @@ function PropertiesPanel() {
           );
         }
         const v = value as number;
+        const mode = modeLegend(p.label);
         return (
           <div className="prop-row" key={p.key}>
-            <label>{p.label}</label>
+            <label title={p.label}>{mode ? mode.name : p.label}</label>
             <input
               type="range"
               min={p.min}
@@ -513,12 +514,25 @@ function PropertiesPanel() {
                 delete befores.current[p.key];
               }}
             />
-            <span className="val">{Number(v.toFixed(3))}</span>
+            <span className="val">{mode?.options[Math.round(v)] ?? Number(v.toFixed(3))}</span>
           </div>
         );
       })}
     </div>
   );
+}
+
+/** Stepped "mode" params carry their legend in the label: "Mode (0 lines, 1 dots)". */
+function modeLegend(label: string): { name: string; options: Record<number, string> } | null {
+  const m = /^(.*?)\s*\((\d+ [^)]*)\)$/.exec(label);
+  if (!m) return null;
+  const options: Record<number, string> = {};
+  for (const part of m[2].split(',')) {
+    const o = /^\s*(\d+)\s+(.+?)\s*$/.exec(part);
+    if (!o) return null;
+    options[Number(o[1])] = o[2];
+  }
+  return { name: m[1], options };
 }
 
 // ---------- History ----------

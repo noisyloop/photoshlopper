@@ -69,10 +69,26 @@ searchable shortcut cheatsheet.
   flatten, layer masks (from selection). Selections and masks are the same
   primitive: a doc-sized alpha mask.
 - **Non-destructive effects** — adjustment/procedural layers with live GLSL:
-  brightness/contrast, hue/saturation, levels, invert, posterize, threshold,
-  grayscale, gaussian/box/motion blur, glitch, chromatic aberration, pixelate,
-  Bayer dither, halftone, noise grain, vignette, bloom, wave, ripple,
-  kaleidoscope — each defined **once** with param metadata, edited in the
+  - *Adjust* — brightness/contrast, hue/saturation, levels, invert,
+    posterize, threshold, grayscale, gradient map, duotone, color balance
+    (shadow/mid/highlight tints, luminosity-preserving), channel swap,
+    sharpen (unsharp mask).
+  - *Blur* — gaussian, box, motion.
+  - *Stylize* — glitch, chromatic aberration, pixelate, Bayer dither,
+    halftone, noise grain, vignette, bloom, edge detect (Sobel; edges only or
+    ink over image), emboss, toon (posterize + ink outlines), Kuwahara
+    (painterly), CRT screen (curved glass, scanlines, phosphor mask —
+    transparent outside the screen), VHS (tracking wobble, chroma bleed,
+    tape-noise band), risograph (two-ink separation with misregistration and
+    grain), LCD palette (4-tone Game Boy greens + pixel grid), ASCII art
+    (8 procedurally drawn glyphs, optional source colors).
+  - *Distort* — wave, ripple, kaleidoscope, twirl, bulge/pinch, polar
+    coordinates, mirror/tile, noise displace.
+  - *Generators* (self-contained layers) — gradient, noise field, voronoi,
+    wave interference, warped fBm, plasma, truchet tiles (arcs/diagonals),
+    metaballs, sunburst, stripes.
+
+  Each is defined **once** with param metadata, edited in the
   Properties panel, and inlined by the shader exporter. Floyd–Steinberg dither
   ships as a destructive CPU filter (error diffusion is inherently sequential).
 - **Remove Background** — *Layer ▸ Remove Background…* (`Ctrl/⌘+Alt+B`, or
@@ -87,10 +103,13 @@ searchable shortcut cheatsheet.
   The small model handles clear subjects well; on very busy scenes some
   background may survive — raise *Edge cutoff* or erase the rest.
 - **Randomize** — seeded (mulberry32, seed shown + re-roll), weighted base
-  pick (gradient / simplex noise field / voronoi / wave interference as
+  pick (gradient / simplex noise field / voronoi / wave interference /
+  warped fBm / plasma / truchet / metaballs / sunburst / stripes as
   procedural layers; flow field / scattered shapes as CPU-rendered raster),
   harmonious palette (analogous/triad/complementary), 1–2 moderate effect
-  layers, inserted at the bottom of the stack as a single undo entry. Every
+  layers (glitch, chromatic aberration, dither, bloom, vignette, pixelate,
+  gradient map, duotone, twirl, polar, mirror/tile, noise displace, CRT,
+  VHS, risograph, edge-detect ink, Kuwahara), inserted at the bottom of the stack as a single undo entry. Every
   click **replaces the previous roll** in place, so you can keep clicking
   for new ideas — up to **50 rolls per document** (with a short cooldown
   against click/key-repeat spam). Each rolled seed lands in the numbered
@@ -131,7 +150,8 @@ searchable shortcut cheatsheet.
     `index.html` runner (serve the folder over HTTP so textures load).
   - **Shadertoy** — `mainImage(out vec4, in vec2)` with an
     `iChannel0..3` mapping comment (max 4 texture layers). Time-based effects
-    (glitch, wave, ripple) animate via `iTime`; the editor renders them at
+    (glitch, wave, ripple, VHS, noise displace, and the warped fBm / plasma /
+    metaballs / sunburst / stripes generators) animate via `iTime`; the editor renders them at
     `TIME = 0`.
   - **ISF** — JSON header + GLSL body using `RENDERSIZE` /
     `IMG_NORM_PIXEL`, textures via `IMPORTED`.
@@ -159,6 +179,17 @@ searchable shortcut cheatsheet.
 - **Layer groups** (`Ctrl+G`) — not implemented (same treatment).
 - **Curves** adjustment — not implemented (needs an LUT editor); Levels is.
 - **Polygonal lasso** — lasso is freehand-only.
+- Effect **modes** (edge detect, polar, mirror/tile, channel swap…) and
+  toggles (ASCII's *keep source colors*) are stepped float sliders, since
+  params are only floats and colors. The Properties panel reads the legend
+  out of the label and shows the selected option's name.
+- **Polar coordinates** shows a seam where the angle wraps and smears the
+  corners in rect→polar mode, as Photoshop's filter does on non-tiling art.
+- Adding bases and effects to the Randomizer changed which art a given seed
+  produces compared with earlier versions. Seeds are reproducible within a
+  version, not across this change.
+- Time-based effects and generators are frozen at `TIME = 0` in
+  the editor and only animate in Shadertoy/ISF/WebGL2 exports.
 - Layer **masks are ignored in shader export** (they'd need extra textures);
   the export dialog warns when this applies.
 - Layer content outside the canvas is clipped when moving (buffers are
