@@ -554,7 +554,8 @@ export const PROC_DEFS: ProcDef[] = [
       result = vec4(clamp(col, 0.0, 1.0), c.a);`,
   },
   {
-    // two-ink separation (least-squares onto the inks' absorption), each ink
+    // two-ink separation (ridge-regularized least squares onto the inks'
+    // absorption, so similar inks stay stable), each ink
     // misregistered, grainy and posterized to 4 tones, multiplied on paper
     type: 'risograph', label: 'Risograph', kind: 'effect', category: 'stylize', needsNoise: true,
     params: [C('color1', 'Ink A', [1.0, 0.28, 0.55]), C('color2', 'Ink B', [0.0, 0.47, 0.75]), F('offset', 'Misregistration (px)', 3, 0, 20, 0.5), F('grain', 'Grain', 0.35, 0, 1)],
@@ -564,10 +565,10 @@ export const PROC_DEFS: ProcDef[] = [
       vec4 s2 = SRC(uv + vec2(-p_offset * 0.6, p_offset) / RES);
       vec3 a1 = 1.0 - p_color1;
       vec3 a2 = 1.0 - p_color2;
-      float g11 = dot(a1, a1);
+      float g11 = dot(a1, a1) + 0.08;
       float g12 = dot(a1, a2);
-      float g22 = dot(a2, a2);
-      float det = max(g11 * g22 - g12 * g12, 0.0001);
+      float g22 = dot(a2, a2) + 0.08;
+      float det = g11 * g22 - g12 * g12;
       vec3 b1 = (1.0 - s1.rgb) * s1.a;
       vec3 b2 = (1.0 - s2.rgb) * s2.a;
       float d1 = (g22 * dot(a1, b1) - g12 * dot(a2, b1)) / det;
@@ -598,7 +599,7 @@ export const PROC_DEFS: ProcDef[] = [
     // per-cell luminance picks one of 8 glyphs drawn as distance fields:
     // space . : + x o # @
     type: 'ascii', label: 'ASCII Art', kind: 'effect', category: 'stylize',
-    params: [F('cell', 'Cell size (px)', 10, 4, 48, 1), C('fg', 'Glyph color', [0.55, 1.0, 0.6]), C('bg', 'Background', [0.03, 0.04, 0.05]), F('keep', 'Keep source colors (0/1)', 1, 0, 1, 1)],
+    params: [F('cell', 'Cell size (px)', 10, 4, 48, 1), C('fg', 'Glyph color', [0.55, 1.0, 0.6]), C('bg', 'Background', [0.03, 0.04, 0.05]), F('keep', 'Keep source colors (0 off, 1 on)', 1, 0, 1, 1)],
     body: `
       float s = max(p_cell, 4.0);
       vec2 g = uv * RES / s;
@@ -790,6 +791,103 @@ export const PROC_DEFS: ProcDef[] = [
       float t = sum / p_sources * 0.5 + 0.5;
       vec3 col = t < 0.5 ? mix(p_color1, p_color2, t * 2.0) : mix(p_color2, p_color3, t * 2.0 - 1.0);
       result = vec4(col, 1.0);`,
+  },
+  {
+    // fbm(p + warp * fbm(p + warp * fbm(p))), drifting slowly with TIME
+    type: 'gen-warp-fbm', label: 'Warped fBm', kind: 'generator', category: 'generate', needsNoise: true,
+    params: [C('color1', 'Color 1', [0.04, 0.03, 0.1]), C('color2', 'Color 2', [0.75, 0.2, 0.35]), C('color3', 'Color 3', [1.0, 0.82, 0.45]), F('scale', 'Scale', 3, 0.5, 12, 0.1), F('warp', 'Warp', 1, 0, 2.5), F('seed', 'Seed', 5, 0, 100, 1)],
+    body: `
+      vec2 p = uv * vec2(RES.x / RES.y, 1.0) * p_scale + p_seed * 5.1;
+      vec2 q = vec2(ns_fbm(p), ns_fbm(p + vec2(5.2, 1.3)));
+      vec2 r = vec2(ns_fbm(p + p_warp * 4.0 * q + vec2(1.7, 9.2) + 0.15 * TIME),
+                    ns_fbm(p + p_warp * 4.0 * q + vec2(8.3, 2.8) + 0.126 * TIME));
+      float f = ns_fbm(p + p_warp * 4.0 * r);
+      float t = clamp((f - 0.2) * 1.8, 0.0, 1.0);
+      vec3 col = t < 0.5 ? mix(p_color1, p_color2, t * 2.0) : mix(p_color2, p_color3, t * 2.0 - 1.0);
+      col = mix(col, p_color3, clamp(q.y * q.y * 0.6, 0.0, 0.4));
+      col *= 0.7 + 0.6 * r.x;
+      result = vec4(clamp(col, 0.0, 1.0), 1.0);`,
+  },
+  {
+    type: 'gen-plasma', label: 'Plasma', kind: 'generator', category: 'generate',
+    params: [C('color1', 'Color 1', [0.1, 0.05, 0.3]), C('color2', 'Color 2', [0.95, 0.25, 0.55]), C('color3', 'Color 3', [0.2, 0.85, 0.9]), F('scale', 'Scale', 8, 1, 30, 0.1), F('speed', 'Speed (animated)', 1, 0, 4), F('phase', 'Phase', 0, 0, 6.2832)],
+    body: `
+      vec2 p = (uv - 0.5) * vec2(RES.x / RES.y, 1.0) * p_scale;
+      float t = TIME * p_speed + p_phase;
+      float v = sin(p.x + t) + sin((p.y + t) * 0.5) + sin((p.x + p.y + t) * 0.5);
+      vec2 cc = p + 2.0 * vec2(sin(t / 5.0), cos(t / 3.0));
+      v += sin(sqrt(dot(cc, cc) + 1.0) + t);
+      float k = fract(v * 0.25 + 0.5);
+      vec3 col = k < 0.3333 ? mix(p_color1, p_color2, k * 3.0)
+        : (k < 0.6667 ? mix(p_color2, p_color3, k * 3.0 - 1.0) : mix(p_color3, p_color1, k * 3.0 - 2.0));
+      result = vec4(col, 1.0);`,
+  },
+  {
+    type: 'gen-truchet', label: 'Truchet Tiles', kind: 'generator', category: 'generate', needsNoise: true,
+    params: [F('mode', 'Mode (0 arcs, 1 diagonals)', 0, 0, 1, 1), F('size', 'Tile size (px)', 48, 8, 256, 1), F('width', 'Line width', 0.2, 0.02, 0.6), C('color1', 'Background', [0.08, 0.07, 0.14]), C('color2', 'Lines', [0.98, 0.7, 0.3]), F('seed', 'Seed', 9, 0, 100, 1)],
+    body: `
+      float s = max(p_size, 4.0);
+      vec2 g = uv * RES / s;
+      vec2 f = fract(g);
+      if (ns_hash21(floor(g) + p_seed * 1.37) < 0.5) f.x = 1.0 - f.x;
+      float d = p_mode < 0.5
+        ? min(abs(length(f) - 0.5), abs(length(f - 1.0) - 0.5))
+        : abs(f.x - f.y) * 0.7071;
+      float w = p_width * 0.5;
+      float aa = 1.0 / s;
+      float ink = 1.0 - smoothstep(w - aa, w + aa, d);
+      result = vec4(mix(p_color1, p_color2, ink), 1.0);`,
+  },
+  {
+    // 6 balls placed from the seed; they orbit a little with TIME
+    type: 'gen-metaballs', label: 'Metaballs', kind: 'generator', category: 'generate', needsNoise: true,
+    params: [C('color1', 'Background', [0.06, 0.08, 0.16]), C('color2', 'Blobs', [0.98, 0.45, 0.35]), F('threshold', 'Threshold', 1, 0.3, 3), F('size', 'Ball size', 1, 0.4, 2), F('seed', 'Seed', 12, 0, 100, 1)],
+    body: `
+      vec2 asp = vec2(RES.x / RES.y, 1.0);
+      vec2 p = uv * asp;
+      float field = 0.0;
+      for (int i = 0; i < 6; i++) {
+        float fi = float(i);
+        vec2 h = ns_hash22(vec2(fi * 3.17 + 0.5, p_seed * 1.91 + 0.5));
+        vec2 ctr = (0.18 + 0.64 * h) * asp;
+        ctr += 0.06 * vec2(sin(TIME * 0.7 + fi * 2.1), cos(TIME * 0.9 + fi * 1.3));
+        float r = (0.07 + 0.08 * ns_hash21(vec2(fi + 9.1, p_seed))) * p_size;
+        vec2 d = p - ctr;
+        field += r * r / (dot(d, d) + 0.0001);
+      }
+      float th = max(p_threshold, 0.01);
+      float aa = th * 0.04;
+      float inside = smoothstep(th - aa, th + aa, field);
+      vec3 blob = p_color2 * (0.8 + 0.2 * clamp((field - th) / th, 0.0, 1.0));
+      result = vec4(mix(p_color1, blob, inside), 1.0);`,
+  },
+  {
+    type: 'gen-sunburst', label: 'Sunburst', kind: 'generator', category: 'generate',
+    params: [F('rays', 'Rays', 16, 2, 64, 1), F('rotation', 'Rotation', 0, 0, 6.2832), C('color1', 'Color 1', [0.98, 0.55, 0.2]), C('color2', 'Color 2', [1.0, 0.82, 0.35]), F('cx', 'Center X', 0.5, 0, 1), F('cy', 'Center Y', 0.5, 0, 1)],
+    body: `
+      vec2 asp = vec2(RES.x / RES.y, 1.0);
+      vec2 d = (uv - vec2(p_cx, p_cy)) * asp;
+      float n = max(floor(p_rays + 0.5), 2.0);
+      float a = atan(d.y, d.x + 0.000001) + p_rotation + TIME * 0.2;
+      float tri = abs(fract(a / 6.2831853 * n) - 0.5) * 2.0;
+      float px = n / (3.1415927 * max(length(d) * RES.y, 1.0));
+      float ink = smoothstep(0.5 - px, 0.5 + px, tri);
+      vec3 col = mix(p_color1, p_color2, ink);
+      col *= 1.0 - 0.25 * clamp(length(d), 0.0, 1.0);
+      result = vec4(col, 1.0);`,
+  },
+  {
+    type: 'gen-stripes', label: 'Stripes', kind: 'generator', category: 'generate',
+    params: [F('angle', 'Angle', 0.6, 0, 3.1416), F('width', 'Stripe width (px)', 24, 2, 200, 1), F('warp', 'Warp', 0.5, 0, 2), C('color1', 'Color 1', [0.1, 0.12, 0.28]), C('color2', 'Color 2', [0.95, 0.4, 0.45])],
+    body: `
+      vec2 p = (uv - 0.5) * vec2(RES.x / RES.y, 1.0);
+      vec2 dir = vec2(cos(p_angle), sin(p_angle));
+      float along = dot(p, vec2(-dir.y, dir.x));
+      float t = dot(p, dir) + p_warp * 0.04 * (sin(along * 6.0 + TIME) + 0.5 * sin(along * 13.0 - TIME * 1.3));
+      float period = max(p_width, 1.0) * 2.0 / RES.y;
+      float tri = abs(fract(t / period) - 0.5) * 2.0;
+      float aa = 1.0 / max(p_width, 1.0);
+      result = vec4(mix(p_color1, p_color2, smoothstep(0.5 - aa, 0.5 + aa, tri)), 1.0);`,
   },
 ];
 

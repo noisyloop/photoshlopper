@@ -6,12 +6,13 @@
 // Rolls are capped at MAX_ROLLS per document; earlier seeds stay in `ideas`
 // and can be restored for free.
 //
-// Base art comes from a weighted set. Four of the six bases are procedural
+// Base art comes from a weighted set. Ten of the twelve bases are procedural
 // layers with exact GLSL twins (gradient, noise field, voronoi, wave
-// interference) — a doc made only of those exports as a fully self-contained
-// shader. The other two (flow field, scattered shapes) are particle/shape
-// driven and render on the CPU into a raster layer; shader export then uses
-// a texture for them.
+// interference, warped fBm, plasma, truchet, metaballs, sunburst, stripes) —
+// a doc made only of those exports as a fully self-contained shader. The
+// other two (flow field, scattered shapes) are particle/shape driven and
+// render on the CPU into a raster layer; shader export then uses a texture
+// for them.
 
 import type { Doc, Layer, ParamValue } from '../types';
 import { identityTransform, newId } from '../types';
@@ -144,7 +145,9 @@ function renderScatter(rng: Rng, w: number, h: number, palette: Vec3[]): ImageDa
   return canvasToImageData(c);
 }
 
-type BaseKind = 'gradient' | 'noise-field' | 'voronoi' | 'waves' | 'flow-field' | 'scatter';
+type BaseKind =
+  | 'gradient' | 'noise-field' | 'voronoi' | 'waves' | 'flow-field' | 'scatter'
+  | 'warp-fbm' | 'plasma' | 'truchet' | 'metaballs' | 'sunburst' | 'stripes';
 
 function makeLayer(name: string, kind: Layer['kind']): Layer {
   return {
@@ -185,6 +188,8 @@ export function randomize(seed: number, opts: { restore?: boolean } = {}): void 
   const base = pickWeighted<BaseKind>(rng, [
     ['gradient', 1.2], ['noise-field', 2], ['voronoi', 1.6], ['waves', 1.6],
     ['flow-field', 2], ['scatter', 1.6],
+    ['warp-fbm', 1.6], ['plasma', 1.2], ['truchet', 1.2], ['metaballs', 1.2],
+    ['sunburst', 0.8], ['stripes', 1],
   ]);
 
   const colorParams: Record<string, ParamValue> = {
@@ -221,13 +226,61 @@ export function randomize(seed: number, opts: { restore?: boolean } = {}): void 
         edge: randRange(rng, 0.3, 0.85),
         seed: randInt(rng, 0, 100),
       });
-    } else {
+    } else if (base === 'waves') {
       layer.procedural = makeNode('gen-waves', {
         ...colorParams,
         frequency: randRange(rng, 8, 40),
         sources: randInt(rng, 2, 5),
         seed: randInt(rng, 0, 100),
       });
+    } else if (base === 'warp-fbm') {
+      layer.procedural = makeNode('gen-warp-fbm', {
+        ...colorParams,
+        scale: randRange(rng, 1.5, 5),
+        warp: randRange(rng, 0.5, 1.6),
+        seed: randInt(rng, 0, 100),
+      });
+    } else if (base === 'plasma') {
+      layer.procedural = makeNode('gen-plasma', {
+        ...colorParams,
+        scale: randRange(rng, 4, 16),
+        speed: randRange(rng, 0.5, 1.5),
+        phase: randRange(rng, 0, Math.PI * 2),
+      });
+    } else {
+      // two-color bases: dark anchor + a bright pop
+      const duo = { color1: v3(palette[0]), color2: v3(palette[randInt(rng, 2, 4)]) };
+      if (base === 'truchet') {
+        layer.procedural = makeNode('gen-truchet', {
+          ...duo,
+          mode: randInt(rng, 0, 1),
+          size: Math.round(Math.min(w, h) / randInt(rng, 8, 24)),
+          width: randRange(rng, 0.1, 0.35),
+          seed: randInt(rng, 0, 100),
+        });
+      } else if (base === 'metaballs') {
+        layer.procedural = makeNode('gen-metaballs', {
+          ...duo,
+          threshold: randRange(rng, 0.7, 1.4),
+          size: randRange(rng, 0.8, 1.4),
+          seed: randInt(rng, 0, 100),
+        });
+      } else if (base === 'sunburst') {
+        layer.procedural = makeNode('gen-sunburst', {
+          ...duo,
+          rays: randInt(rng, 8, 28),
+          rotation: randRange(rng, 0, Math.PI * 2),
+          cx: randRange(rng, 0.3, 0.7),
+          cy: randRange(rng, 0.3, 0.7),
+        });
+      } else {
+        layer.procedural = makeNode('gen-stripes', {
+          ...duo,
+          angle: randRange(rng, 0, Math.PI),
+          width: Math.round(Math.min(w, h) / randInt(rng, 12, 40)),
+          warp: randRange(rng, 0, 1.5),
+        });
+      }
     }
     newLayers.push(layer);
   }
@@ -240,6 +293,25 @@ export function randomize(seed: number, opts: { restore?: boolean } = {}): void 
     ['bloom', () => ({ threshold: randRange(rng, 0.45, 0.7), amount: randRange(rng, 0.3, 0.9), radius: randInt(rng, 8, 28) })],
     ['vignette', () => ({ amount: randRange(rng, 0.3, 0.6), radius: randRange(rng, 0.6, 0.95), softness: randRange(rng, 0.25, 0.6) })],
     ['pixelate', () => ({ size: randInt(rng, 3, 10) })],
+    ['gradient-map', () => ({ color1: v3(palette[0]), color2: v3(palette[randInt(rng, 1, 2)]), color3: v3(palette[randInt(rng, 3, 4)]), midpoint: randRange(rng, 0.35, 0.65), amount: randRange(rng, 0.5, 0.9) })],
+    ['duotone', () => ({ color1: v3(palette[0]), color2: v3(palette[randInt(rng, 2, 4)]), contrast: randRange(rng, 0.9, 1.6) })],
+    ['twirl', () => ({ angle: randRange(rng, 1.5, 5) * pick(rng, [-1, 1]), radius: randRange(rng, 0.3, 0.7), cx: randRange(rng, 0.35, 0.65), cy: randRange(rng, 0.35, 0.65) })],
+    ['polar', () => ({ mode: randInt(rng, 0, 1) })],
+    ['mirror-tile', () => ({ mode: randInt(rng, 0, 3), count: randInt(rng, 2, 4) })],
+    ['displace', () => ({ amount: randRange(rng, 0.015, 0.06), scale: randRange(rng, 2, 8), seed: randInt(rng, 0, 100) })],
+    ['crt', () => ({ curvature: randRange(rng, 0.15, 0.45), scanlines: randRange(rng, 0.25, 0.5), mask: randRange(rng, 0.15, 0.4), size: randInt(rng, 3, 5) })],
+    ['vhs', () => ({ tracking: randRange(rng, 0.002, 0.006), chroma: randRange(rng, 0.003, 0.008), noise: randRange(rng, 0.2, 0.5) })],
+    ['risograph', () => {
+      // second ink = the palette color farthest from the first, so the two-ink
+      // separation has something to separate
+      const inkA = palette[randInt(rng, 1, 4)];
+      const dist = (c: Vec3) => (c[0] - inkA[0]) ** 2 + (c[1] - inkA[1]) ** 2 + (c[2] - inkA[2]) ** 2;
+      const inkB = palette.slice(1).reduce((best, c) => (dist(c) > dist(best) ? c : best));
+      return { color1: v3(inkA), color2: v3(inkB), offset: randRange(rng, 1.5, 5), grain: randRange(rng, 0.2, 0.4) };
+    }],
+    // dense flow-field strokes turn almost entirely to ink
+    ...(base === 'flow-field' ? [] : [['edge-detect', () => ({ mode: 1, thickness: randRange(rng, 1, 2), strength: randRange(rng, 0.8, 1.4) })] as [string, () => Record<string, ParamValue>]]),
+    ['kuwahara', () => ({ radius: randInt(rng, 4, 10) })],
   ];
   const effectCount = randInt(rng, 1, 2);
   const shuffled = [...effectPool].sort(() => rng() - 0.5);
