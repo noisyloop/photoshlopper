@@ -69,10 +69,23 @@ searchable shortcut cheatsheet.
   flatten, layer masks (from selection). Selections and masks are the same
   primitive: a doc-sized alpha mask.
 - **Non-destructive effects** — adjustment/procedural layers with live GLSL:
-  brightness/contrast, hue/saturation, levels, invert, posterize, threshold,
-  grayscale, gaussian/box/motion blur, glitch, chromatic aberration, pixelate,
-  Bayer dither, halftone, noise grain, vignette, bloom, wave, ripple,
-  kaleidoscope — each defined **once** with param metadata, edited in the
+  - *Adjust* — brightness/contrast, hue/saturation, levels, invert,
+    posterize, threshold, grayscale, gradient map, duotone, color balance
+    (shadow/mid/highlight tints, luminosity-preserving), channel swap,
+    sharpen (unsharp mask).
+  - *Blur* — gaussian, box, motion.
+  - *Stylize* — glitch, chromatic aberration, pixelate, Bayer dither,
+    halftone, noise grain, vignette, bloom, edge detect (Sobel; edges only or
+    ink over image), emboss, toon (posterize + ink outlines), Kuwahara
+    (painterly), CRT screen (curved glass, scanlines, phosphor mask —
+    transparent outside the screen), VHS (tracking wobble, chroma bleed,
+    tape-noise band), risograph (two-ink separation with misregistration and
+    grain), LCD palette (4-tone Game Boy greens + pixel grid), ASCII art
+    (8 procedurally drawn glyphs, optional source colors).
+  - *Distort* — wave, ripple, kaleidoscope, twirl, bulge/pinch, polar
+    coordinates, mirror/tile, noise displace.
+
+  Each is defined **once** with param metadata, edited in the
   Properties panel, and inlined by the shader exporter. Floyd–Steinberg dither
   ships as a destructive CPU filter (error diffusion is inherently sequential).
 - **Remove Background** — *Layer ▸ Remove Background…* (`Ctrl/⌘+Alt+B`, or
@@ -131,7 +144,7 @@ searchable shortcut cheatsheet.
     `index.html` runner (serve the folder over HTTP so textures load).
   - **Shadertoy** — `mainImage(out vec4, in vec2)` with an
     `iChannel0..3` mapping comment (max 4 texture layers). Time-based effects
-    (glitch, wave, ripple) animate via `iTime`; the editor renders them at
+    (glitch, wave, ripple, VHS, noise displace) animate via `iTime`; the editor renders them at
     `TIME = 0`.
   - **ISF** — JSON header + GLSL body using `RENDERSIZE` /
     `IMG_NORM_PIXEL`, textures via `IMPORTED`.
@@ -159,6 +172,13 @@ searchable shortcut cheatsheet.
 - **Layer groups** (`Ctrl+G`) — not implemented (same treatment).
 - **Curves** adjustment — not implemented (needs an LUT editor); Levels is.
 - **Polygonal lasso** — lasso is freehand-only.
+- Effect **modes** (edge detect, polar, mirror/tile, channel swap…) are
+  stepped float sliders, since params are only floats and colors. Toggles
+  like ASCII's *keep source colors* are 0/1 sliders.
+- **Polar coordinates** shows a seam where the angle wraps and smears the
+  corners in rect→polar mode, as Photoshop's filter does on non-tiling art.
+- Time-based effects (VHS, noise displace drift) are frozen at `TIME = 0` in
+  the editor and only animate in Shadertoy/ISF/WebGL2 exports.
 - Layer **masks are ignored in shader export** (they'd need extra textures);
   the export dialog warns when this applies.
 - Layer content outside the canvas is clipped when moving (buffers are
