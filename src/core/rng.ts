@@ -52,6 +52,10 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
 export const rgbToHex = ([r, g, b]: [number, number, number]) =>
   '#' + [r, g, b].map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
 
+/** True for '#rgb' / '#rrggbb' — the only color syntax the app stores. */
+export const isHexColor = (v: unknown): v is string =>
+  typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v);
+
 export function hexToRgb01(hex: string): [number, number, number] {
   const m = hex.replace('#', '');
   const v = m.length === 3 ? m.split('').map((c) => c + c).join('') : m;
