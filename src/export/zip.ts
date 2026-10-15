@@ -90,7 +90,9 @@ export function readZip(buffer: ArrayBuffer): Map<string, Uint8Array> {
   const count = view.getUint16(eocd + 10, true);
   let ptr = view.getUint32(eocd + 16, true);
   const out = new Map<string, Uint8Array>();
+  const corrupt = () => new Error('Corrupt zip: entry points outside the file');
   for (let i = 0; i < count; i++) {
+    if (ptr + 46 > bytes.length) throw corrupt();
     if (view.getUint32(ptr, true) !== 0x02014b50) throw new Error('Corrupt zip central directory');
     const method = view.getUint16(ptr + 10, true);
     const size = view.getUint32(ptr + 24, true);
@@ -98,6 +100,7 @@ export function readZip(buffer: ArrayBuffer): Map<string, Uint8Array> {
     const extraLen = view.getUint16(ptr + 30, true);
     const commentLen = view.getUint16(ptr + 32, true);
     const localOffset = view.getUint32(ptr + 42, true);
+    if (ptr + 46 + nameLen > bytes.length || localOffset + 30 > bytes.length) throw corrupt();
     const name = td.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
     if (method !== 0) {
       throw new Error(`Zip entry "${name}" is compressed (method ${method}); this reader only supports .pslop files written by Photoshlopper`);
@@ -105,6 +108,7 @@ export function readZip(buffer: ArrayBuffer): Map<string, Uint8Array> {
     const localNameLen = view.getUint16(localOffset + 26, true);
     const localExtraLen = view.getUint16(localOffset + 28, true);
     const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+    if (dataStart + size > bytes.length) throw corrupt();
     out.set(name, bytes.subarray(dataStart, dataStart + size));
     ptr += 46 + nameLen + extraLen + commentLen;
   }

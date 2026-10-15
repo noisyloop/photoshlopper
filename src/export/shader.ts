@@ -37,6 +37,9 @@ const fmt = (n: number): string => {
   return s.includes('.') || s.includes('e') || s.includes('E') ? s : s + '.0';
 };
 
+/** Layer names go into `//` comments; a newline would end the comment and inject GLSL. */
+const commentSafe = (s: string): string => s.replace(/[\u0000-\u001f\u007f\u2028\u2029\\]/g, ' ');
+
 export function buildShaderExport(doc: Doc, target: ShaderTarget, seed: number): ShaderBuild {
   const warnings: string[] = [];
   const layers = doc.layers.filter((l) => l.visible && l.opacity > 0);
@@ -92,7 +95,7 @@ export function buildShaderExport(doc: Doc, target: ShaderTarget, seed: number):
     const op = fmt(layer.opacity);
     if (def && def.kind === 'effect') {
       chunks.push(
-        `// layer ${i}: "${layer.name}" (${def.type}, opacity ${op})`,
+        `// layer ${i}: "${commentSafe(layer.name)}" (${def.type}, opacity ${op})`,
         `#define SRC(p) ${prevFn}(clamp((p), 0.0, 1.0))`,
         `vec4 fx_${i}(vec2 uv) {`,
         paramLocalDecls(def, layer.procedural!),
@@ -112,7 +115,7 @@ export function buildShaderExport(doc: Doc, target: ShaderTarget, seed: number):
         : `  vec2 luv = vec2(${fmt(t.a)} * uv.x + ${fmt(t.b)} * uv.y + ${fmt(t.c)}, ${fmt(t.d)} * uv.x + ${fmt(t.e)} * uv.y + ${fmt(t.f)});\n` +
           `  if (luv.x < 0.0 || luv.x > 1.0 || luv.y < 0.0 || luv.y > 1.0) return vec4(0.0);`;
       chunks.push(
-        `// layer ${i}: "${layer.name}" (${def.type}, blend ${layer.blend}, opacity ${op})`,
+        `// layer ${i}: "${commentSafe(layer.name)}" (${def.type}, blend ${commentSafe(layer.blend)}, opacity ${op})`,
         `vec4 gen_${i}(vec2 uv) {`,
         paramLocalDecls(def, layer.procedural!),
         `  vec4 result = vec4(0.0);`,
@@ -139,7 +142,7 @@ export function buildShaderExport(doc: Doc, target: ShaderTarget, seed: number):
         ? '  vec2 luv = uv;'
         : `  vec2 luv = vec2(${fmt(t.a)} * uv.x + ${fmt(t.b)} * uv.y + ${fmt(t.c)}, ${fmt(t.d)} * uv.x + ${fmt(t.e)} * uv.y + ${fmt(t.f)});`;
       chunks.push(
-        `// layer ${i}: "${layer.name}" (texture ${ti}, blend ${layer.blend}, opacity ${op})`,
+        `// layer ${i}: "${commentSafe(layer.name)}" (texture ${ti}, blend ${commentSafe(layer.blend)}, opacity ${op})`,
         `vec4 layer_${i}(vec2 uv) {`,
         luv,
         `  if (luv.x < 0.0 || luv.x > 1.0 || luv.y < 0.0 || luv.y > 1.0) return vec4(0.0);`,

@@ -5,6 +5,7 @@
 
 import { makeCanvas, canvasToImageData } from './pixels';
 import { ensureFont } from './fonts';
+import { isHexColor } from './rng';
 
 export interface TextStyle {
   bold: boolean;
@@ -82,9 +83,31 @@ export function readTextMeta(meta: Record<string, unknown> | undefined): TextMet
     y: Number(meta.y) || 0,
     size: Number(meta.size) || 48,
     font: typeof meta.font === 'string' ? meta.font : 'system-ui, sans-serif',
-    color: typeof meta.color === 'string' ? meta.color : '#000000',
-    style: { ...DEFAULT_TEXT_STYLE, ...((meta.style as Partial<TextStyle>) ?? {}) },
+    color: isHexColor(meta.color) ? meta.color : '#000000',
+    style: readTextStyle(meta.style),
   };
+}
+
+/**
+ * Merge a stored style over the defaults, keeping only known keys whose value
+ * has the default's type. Meta comes from project files, so colors must be
+ * plain hex — they end up in CSS (e.g. `background: url(...)` would fetch).
+ */
+function readTextStyle(raw: unknown): TextStyle {
+  const style: TextStyle = { ...DEFAULT_TEXT_STYLE };
+  if (!raw || typeof raw !== 'object') return style;
+  const src = raw as Record<string, unknown>;
+  const out = style as unknown as Record<string, unknown>;
+  for (const key of Object.keys(DEFAULT_TEXT_STYLE) as Array<keyof TextStyle>) {
+    const v = src[key];
+    const d = DEFAULT_TEXT_STYLE[key];
+    if (typeof v !== typeof d) continue;
+    if (typeof v === 'number' && !Number.isFinite(v)) continue;
+    if (key === 'align' && v !== 'left' && v !== 'center' && v !== 'right') continue;
+    if (typeof v === 'string' && key !== 'align' && !isHexColor(v)) continue;
+    out[key] = v;
+  }
+  return style;
 }
 
 export const TEXT_PRESETS: Array<{ name: string; font?: string; color?: string; style: Partial<TextStyle> }> = [
